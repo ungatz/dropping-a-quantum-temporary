@@ -1,0 +1,10 @@
+// Genuine entanglement built with a controlled X, then an attempt to discard
+// the entangled register.  Its observable algebra is a 2x2 block, so the
+// criterion of this work refuses the drop.
+def main(){
+	x := H(0:𝔹);
+	y := 0:𝔹;
+	if x { y := X(y); }   // y is now entangled with x
+	forget(y=0:𝔹);        // false half the time
+	return measure(x);
+}

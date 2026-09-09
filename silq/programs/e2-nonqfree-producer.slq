@@ -1,0 +1,8 @@
+// The temporary is produced with H, which is not qfree, so the producer rule
+// has nothing to work with.
+def main(){
+	x := H(0:𝔹);
+	y := H(x);
+	forget(y);
+	return 0:𝔹;
+}

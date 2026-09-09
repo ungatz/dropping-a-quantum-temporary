@@ -1,0 +1,14 @@
+// Row 7, the state-level check: return Bob's qubit itself and print the state.
+// Alice's message is (|0>+i|1>)/sqrt2 = S(H|0>), and Bob's qubit ends there.
+def teleport(msg: B): B {
+	a := H(0:B);
+	b := 0:B;
+	if a { b := X(b); }
+	if msg { a := X(a); }
+	msg := H(msg);
+	(m0, m1) := (measure(msg), measure(a));
+	if m1 { b := X(b); }
+	if m0 { b := Z(b); }
+	return b;
+}
+def main() { return teleport(S(H(0:B))); }

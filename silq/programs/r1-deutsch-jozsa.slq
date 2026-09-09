@@ -1,0 +1,19 @@
+// Row 1, Deutsch-Jozsa.  n query qubits and one phase-kickback ancilla y.
+// y is prepared in |-> = H|1>, the oracle kicks the phase onto x, and y is
+// still |-> at the end of the function.  The forget(y) below is exactly the
+// drop under test: nothing restores y to |0>, and the criterion of this work
+// admits it because y is parked on the line [|->] at every visible input.
+def dj[n:!N](const f: const uint[n] !-> lifted B): !uint[n] {
+	x := 0:uint[n];
+	for k in [0..n) { x[k] := H(x[k]); }
+	y := H(1:B);              // ancilla parked on |->
+	y xor= f(x);              // phase kickback: (-1)^f(x) onto x
+	for k in [0..n) { x[k] := H(x[k]); }
+	forget(y);                // THE DROP UNDER TEST: y is |->, not |0>
+	return measure(x);
+}
+
+def main() {
+	def fconst(const x: uint[3]) lifted: B { return 0:B; }
+	return dj(fconst);
+}

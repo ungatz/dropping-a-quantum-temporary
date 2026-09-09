@@ -1,0 +1,11 @@
+// Row 7: Silq's measure consumes its argument, so measuring a register,
+// keeping the survivor, reading it and then dropping it has no spelling.
+// This is the direct test of that.
+def main() {
+	t := H(0:B);
+	p := measure(t);   // measure consumes t
+	x := 0:B;
+	if t { x := X(x); }   // ATTEMPT: keep using t after measuring it
+	forget(t);
+	return (p, measure(x));
+}

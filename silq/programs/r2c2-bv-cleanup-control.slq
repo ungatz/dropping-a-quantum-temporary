@@ -1,0 +1,17 @@
+// Row 2 control: the ancilla is restored to |0> by hand, then forgotten.
+//
+// Row 2, Bernstein-Vazirani with f(x) = s.x mod 2 and one phase-kickback
+// ancilla y prepared in |-> = H|1>.  y is still |-> at the end; the criterion
+// of this work admits its drop, with visible action X^s on the parked line.
+def bv[n:!N](const s: !uint[n]): !uint[n] {
+	x := 0:uint[n];
+	for k in [0..n) { x[k] := H(x[k]); }
+	y := H(1:B);                                  // ancilla parked on |->
+	for k in [0..n) { if s[k] { y xor= x[k]; } }  // y ^= s.x, kicks the phase
+	for k in [0..n) { x[k] := H(x[k]); }
+	y := H(y); y := X(y);   // CONTROL: restore to |0>
+	forget(y);
+	return measure(x);
+}
+
+def main() { return bv(5:!uint[3]); }

@@ -1,0 +1,16 @@
+// Row 6, the drop probe.  After Bob decodes, b holds exactly the classical bit
+// b1, but its producer chain runs through H and a quantum-controlled X.  Drop
+// it instead of measuring it, and read out only the first bit.
+def superdense_drop(const b0: !B, const b1: !B): !B {
+	a := H(0:B);
+	b := 0:B;
+	if a { b := X(b); }
+	if b1 { a := X(a); }
+	if b0 { a := Z(a); }
+	if a { b := X(b); }
+	a := H(a);
+	forget(b);            // THE DROP UNDER TEST
+	return measure(a);
+}
+
+def main() { return superdense_drop(1:!B, 0:!B); }

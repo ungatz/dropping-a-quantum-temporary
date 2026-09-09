@@ -1,0 +1,9 @@
+// Row 8, testing for a repeat-until-success construct.  Silq's own test file
+// for one is commented out and unfinished, so what follows is the syntax that
+// file sketches rather than a construct the language is known to have.
+def main() {
+	repeat { (q0, q1) := (H(0:B), H(0:B)); }
+	until (!measure(q0 & q1));
+	else { measure(q0, q1) }
+	return (q0, q1);
+}

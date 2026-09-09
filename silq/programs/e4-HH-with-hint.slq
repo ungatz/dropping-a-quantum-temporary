@@ -1,0 +1,9 @@
+// The same program as the previous one, but with the value supplied to
+// forget: this separates a gap in synthesis from a gap in the rule itself.
+def main(){
+	x := 0:𝔹;
+	y := H(x);
+	z := H(y);
+	forget(z=0:𝔹);
+	return 0:𝔹;
+}

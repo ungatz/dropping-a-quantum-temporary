@@ -1,0 +1,8 @@
+// Row 5 baseline: the forget machinery itself works on a register whose whole
+// producer chain is qfree, even though the register is not |0> at the point of
+// discard.
+def main() {
+	u := X(0:B);      // |1>, produced by the qfree gate X
+	forget(u);        // the drop under test
+	return 0:B;
+}

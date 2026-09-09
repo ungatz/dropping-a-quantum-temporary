@@ -1,0 +1,12 @@
+// H then H is the identity, so the temporary is exactly a classical copy of
+// the input and its observable algebra at the point of discard is
+// commutative -- yet neither factor is qfree.  Silq reasons about the
+// producer and the criterion of this work reasons about the register, so a
+// refusal here separates the two conditions.
+def main(){
+	x := 0:𝔹;
+	y := H(x);
+	z := H(y);
+	forget(z);
+	return 0:𝔹;
+}

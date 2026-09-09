@@ -1,0 +1,12 @@
+// Spread and read, the second of three introductory programs, with the
+// automatic forget: allocate |0>, apply a Hadamard, let the temporary control
+// an X on the visible register, then discard it.  The two are entangled and
+// the criterion of this work refuses the drop.  The question here is what the
+// automatic forget does with the same program.
+def main(){
+	t := H(0:𝔹);
+	x := 0:𝔹;
+	if t { x := X(x); }   // x := x + t: t reads into x
+	forget(t);
+	return measure(x);
+}

@@ -1,0 +1,9 @@
+// Baseline: the temporary is produced by a lifted (qfree and const) function,
+// which is the shape Silq's uncomputation rule is designed to accept.
+def f(const x:𝔹)lifted:𝔹{ return x }
+def main(){
+	x := H(0:𝔹);
+	y := f(x);
+	forget(y);
+	return measure(x);
+}

@@ -1,0 +1,5 @@
+dist-newstyle/
+.lake/
+*.hi
+*.o
+.DS_Store

@@ -1,0 +1,9 @@
+// The same again, run rather than only type-checked: if the forget succeeds
+// at run time the register really was classical and discardable.
+def main(){
+	x := 0:𝔹;
+	y := H(x);
+	z := H(y);
+	forget(z=0:𝔹);
+	return 1:𝔹;
+}
