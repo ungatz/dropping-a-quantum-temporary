@@ -1,0 +1,440 @@
+% ===========================================================================
+% preamble.tex -- the machinery, in one file, so that full.tex and
+% supplement.tex look like one hand set both.
+%
+% Seven parts, in load order; each uses the one above it.
+%
+%     1. PACKAGES     what is loaded, and its ACM production status
+%     2. THEOREMS     theorem environments, and the cross-reference repair
+%     3. STYLE        the palette, the callout, listings, tables, lists
+%     4. NOTATION     one name, one concept
+%     5. RULES        inference rules, behind a swappable backend
+%     6. MARKERS      what is settled, and what is not
+%     7. TIERS        evidence tags
+% ===========================================================================
+
+
+% ===========================================================================
+% 1. PACKAGES
+%
+% ACM's production system accepts a fixed list, recorded per line below.
+% Exactly one package here is not on it, and it is fenced behind wrappers in
+% part 5.
+%
+% fontenc and amssymb are deliberately absent: acmart loads newtxmath (and
+% unicode-math under LuaTeX), which already provides every symbol used here,
+% and loading amssymb on top of them aborts the build.
+% ===========================================================================
+
+\usepackage{amsthm}               % TAPS: accepted
+\usepackage{mathtools}            % TAPS: accepted (loads and extends amsmath)
+\usepackage{enumitem}             % TAPS: accepted
+\usepackage{listings}             % TAPS: accepted
+\usepackage{subcaption}           % TAPS: accepted
+\usepackage{xspace}               % TAPS: accepted
+\usepackage{multirow}             % TAPS: accepted
+\usepackage{array}                % TAPS: accepted
+
+% Not on the TAPS list, and the only one. mathpartir is how every PL paper
+% sets an inference rule and no accepted package replaces it. It is confined
+% to part 5 behind \jrule / \jaxiom, so swapping the backend at camera ready
+% is an edit to two macro bodies. The alternative is to ask ACM's TeX support
+% to whitelist it, which is a common request.
+\usepackage{mathpartir}
+
+% cleveref LAST: it patches the referencing commands of everything above it.
+\usepackage{cleveref}             % TAPS: accepted
+
+% Line breaking: acmsmall is a narrow measure and this paper has long
+% identifiers in running text.
+\setlength{\emergencystretch}{2em}
+\hyphenpenalty=1000
+\sloppy
+
+
+% ===========================================================================
+% 2. THEOREMS, and the cross-reference repair
+%
+% acmart defines its own theorem set at \AtEndPreamble, each guarded by
+% \@ifundefined, so an environment defined here simply wins. `acmplain' and
+% `acmdefinition' are ACM's own styles.
+%
+% \newtheorem{lemma}[theorem]{...} shares the `theorem' counter, and cleveref
+% resolves a reference's type from its counter, not from its environment. With
+% a shared counter every \cref prints "theorem N" -- definitions, remarks and
+% examples alike, and \crefname does not override it. The remedy below is
+% cleveref's own \crefalias, applied inside each environment's group so it
+% does not leak. The aliascnt package fixes it equally well and is not used:
+% it is not on the TAPS list and cleveref is.
+% ===========================================================================
+
+\theoremstyle{acmplain}
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{proposition}[theorem]{Proposition}
+\newtheorem{lemma}[theorem]{Lemma}
+\newtheorem{corollary}[theorem]{Corollary}
+\newtheorem{fact}[theorem]{Fact}
+\newtheorem{conjecture}[theorem]{Conjecture}
+
+\theoremstyle{acmdefinition}
+\newtheorem{definition}[theorem]{Definition}
+\newtheorem{example}[theorem]{Example}
+\newtheorem{convention}[theorem]{Convention}
+\newtheorem{notation}[theorem]{Notation}
+\newtheorem{openq}[theorem]{Open Question}
+\newtheorem{remark}[theorem]{Remark}
+
+\makeatletter
+\@ifpackageloaded{cleveref}{%
+  \newcommand{\crefsharedcounter}[1]{%
+    \@ifundefined{#1}{}{%
+      \expandafter\let\csname clv@#1\expandafter\endcsname\csname #1\endcsname
+      \expandafter\let\csname endclv@#1\expandafter\endcsname\csname end#1\endcsname
+      \expandafter\def\csname #1\endcsname{\crefalias{theorem}{#1}\csname clv@#1\endcsname}%
+      \expandafter\def\csname end#1\endcsname{\csname endclv@#1\endcsname}%
+    }%
+  }%
+  \crefsharedcounter{proposition}%
+  \crefsharedcounter{lemma}%
+  \crefsharedcounter{corollary}%
+  \crefsharedcounter{fact}%
+  \crefsharedcounter{conjecture}%
+  \crefsharedcounter{definition}%
+  \crefsharedcounter{example}%
+  \crefsharedcounter{convention}%
+  \crefsharedcounter{notation}%
+  \crefsharedcounter{openq}%
+  \crefsharedcounter{remark}%
+}{}
+\makeatother
+
+% Names cleveref does not know. Standard environments need no entry.
+\crefname{fact}{fact}{facts}
+\Crefname{fact}{Fact}{Facts}
+\crefname{openq}{open question}{open questions}
+\Crefname{openq}{Open question}{Open questions}
+\crefname{convention}{convention}{conventions}
+\Crefname{convention}{Convention}{Conventions}
+\crefname{notation}{notation}{notations}
+\Crefname{notation}{Notation}{Notations}
+
+\renewcommand{\qedsymbol}{\ensuremath{\square}}
+
+
+% ===========================================================================
+% 3. STYLE -- every visual decision, and the only place any of them is made.
+%
+% acmart fixes the page geometry, the font and the leading, and a venue calls
+% a deviation from them grounds for summary rejection. So none of that is
+% touched here. What is left is colour, the spacing inside our own
+% environments, and the look of the objects we invented.
+% ===========================================================================
+
+% --- the palette. One accent, used sparingly: a paper with two has none. ---
+% If you change a colour here, change it in figures/house.tex too -- figures
+% are standalone documents and never see this file.
+\definecolor{ink}{HTML}{16191D}        % near-black: rules, strong marks
+\definecolor{accent}{HTML}{1F4E79}     % the one accent: a deep, quiet blue
+\definecolor{accentsoft}{HTML}{E8EEF4} % the accent at 10%: fills, never text
+\definecolor{accentwarm}{HTML}{9A5B00} % the accent's warm partner: the second block of a matrix
+\definecolor{accentplum}{HTML}{8E2F5F} % and the third, where a temporary has three levels
+\definecolor{muted}{HTML}{5B6470}      % secondary text: captions, notes
+\definecolor{hairline}{HTML}{C9CFD6}   % table and box rules
+
+% --- rule displays ---------------------------------------------------------
+% A rule name in small caps, in the accent, set smaller than the judgement it
+% names. The eye should find the judgement first and the name second; that
+% ordering is the whole reason the name is not black.
+\newcommand{\rulename}[1]{{\normalfont\scshape\footnotesize\color{accent}#1}}
+
+% mathpartir's defaults assume a wide measure. `andskip` is the gap between
+% rules on a line, `sep` the gap above and below the bar.
+\mprset{andskip=1.6em plus 0.4fil minus 0.4em, sep=0.9em}
+\newcommand{\ruleskip}{\vskip 0.55\baselineskip}
+
+% --- the key-idea callout --------------------------------------------------
+%   \begin{keyidea} one sentence \end{keyidea}
+% Zero packages: a saved box, measured, with a rule cut to its exact height.
+% It does not break across a page, deliberately -- a key idea is one
+% sentence, and if yours needs two pages it is not a key idea. Use it ONCE
+% per document.
+\newsavebox{\keyideabox}
+\newenvironment{keyidea}
+  {\par\vskip 0.8\baselineskip%
+   \begin{lrbox}{\keyideabox}%
+   \begin{minipage}{\dimexpr\linewidth-1.9em\relax}\itshape\noindent\ignorespaces}
+  {\end{minipage}\end{lrbox}%
+   \noindent
+   \textcolor{accent}{\rule[-\dp\keyideabox]{1.2pt}{\dimexpr\ht\keyideabox+\dp\keyideabox\relax}}%
+   \hspace{1.1em}\usebox{\keyideabox}%
+   \par\vskip 0.8\baselineskip}
+
+% --- fonts -----------------------------------------------------------------
+% The documents build with LuaLaTeX. acmart then sets the text in Linux
+% Libertine through fontspec and microtype keeps its font expansion; the
+% monospace face is replaced by Iosevka, the face the programs are read in,
+% matched to the lowercase height of the text.
+\ifPDFTeX\else
+  \setmonofont{Iosevka Custom}[Scale=MatchLowercase,RawFeature={-liga,-calt,-clig,-dlig}]
+\fi
+
+% --- a program, one instruction per line ----------------------------------
+% Code in column one, its comment in column two, both in the code font:
+%   \begin{prog}
+%   let t = new |0>   & -- allocate\\
+%   drop t; v         & -- discard the temporary\\
+%   \end{prog}
+\newenvironment{prog}[1][l@{\hspace{2.2em}}l]%
+  {\par\vspace{2.5pt}\noindent\hspace*{1.8em}\begingroup\ttfamily
+   \begin{tabular}{@{}#1@{}}}%
+  {\end{tabular}\endgroup\par\vspace{2.5pt}}
+
+% --- proof steps -------------------------------------------------------------
+% One claim per step, numbered <1>, <2>, ... so a reader can point at the one
+% they doubt.
+\newlist{steps}{enumerate}{1}
+\setlist[steps]{label=$\langle$\arabic*$\rangle$,ref=$\langle$\arabic*$\rangle$,
+  leftmargin=2.1em,labelsep=0.5em,align=left,itemsep=0.5pt,topsep=1pt,parsep=0pt}
+
+% --- code ------------------------------------------------------------------
+% No frame, no line numbers, a whisper of background. A listing should read
+% as a quotation from the source, not as a boxed exhibit.
+\definecolor{lstbg}{HTML}{F7F8FA}
+\lstdefinestyle{house}{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{accent}\bfseries,
+  commentstyle=\color{muted}\itshape,
+  stringstyle=\color{ink},
+  showstringspaces=false,
+  columns=fullflexible,
+  keepspaces=true,
+  breaklines=true,
+  breakatwhitespace=true,
+  backgroundcolor=\color{lstbg},
+  framexleftmargin=6pt, framexrightmargin=6pt,
+  xleftmargin=6pt, xrightmargin=6pt,
+  aboveskip=0.8\baselineskip, belowskip=0.8\baselineskip,
+  numbers=none, frame=none, captionpos=b,
+}
+\lstset{style=house}
+
+% \kw is the only thing that ever styles a keyword, so one \renewcommand
+% restyles every keyword in the paper.
+\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\kw}[1]{{\ttfamily\bfseries\color{accent}#1}}
+
+% --- tables ----------------------------------------------------------------
+% booktabs is bundled by acmart. No vertical rules, ever; air above and below
+% every rule; a table that needs a box is a table that needs cutting.
+% L{w} is a fixed-width column set ragged right, so a narrow cell never
+% stretches its words across the column to justify them.
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\setlength{\heavyrulewidth}{0.9pt}
+\setlength{\lightrulewidth}{0.4pt}
+\setlength{\aboverulesep}{3pt}
+\setlength{\belowrulesep}{3pt}
+\newcommand{\thead}[1]{\textnormal{\bfseries #1}}
+
+% --- paragraphs ------------------------------------------------------------
+% acmart leaves \parskip at zero, so paragraphs are separated by the indent
+% alone, which is tight for a page of running argument.  Three twentieths of a
+% line is the air; the indent STAYS, because after a display or inside a proof
+% vertical space alone does not say whether a new paragraph has begun.  Never
+% give this a negative shrink: that buys pages by setting paragraphs TIGHTER
+% than acmart's own.
+\setlength{\parskip}{0.15\baselineskip plus 0.15\baselineskip minus 0.15\baselineskip}
+
+% --- lists -----------------------------------------------------------------
+% \parskip now leaks into every list, so pin the list metrics that were
+% implicitly zero before and would otherwise inherit it twice over.
+\setlist[itemize]{leftmargin=1.3em, itemsep=0.25\baselineskip, topsep=0.4\baselineskip, parsep=0pt, partopsep=0pt}
+\setlist[enumerate]{leftmargin=1.6em, itemsep=0.25\baselineskip, topsep=0.4\baselineskip, parsep=0pt, partopsep=0pt}
+\setlist[description]{leftmargin=0pt, itemsep=0.3\baselineskip, topsep=0.4\baselineskip, partopsep=0pt, font=\normalfont\itshape}
+
+
+% ===========================================================================
+% 4. NOTATION -- one name, one concept.
+%
+% The rule: no section writes a bare \mathsf, \mathbb or \texttt for a
+% concept that recurs. If it recurs it gets a macro here, and that macro is
+% the only spelling of it in both documents. That is what makes a global
+% notation change safe, and the only reason full.tex and supplement.tex can
+% share a definition without drifting.
+% ===========================================================================
+
+\newcommand{\C}{\mathbb{C}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\N}{\mathbb{N}}
+\newcommand{\Q}{\mathbb{Q}}
+\newcommand{\Hilb}{\mathcal{H}}
+\newcommand{\adj}{^{\dagger}}
+\newcommand{\ket}[1]{\lvert #1 \rangle}
+\newcommand{\bra}[1]{\langle #1 \rvert}
+\newcommand{\braket}[2]{\langle #1 \mid #2 \rangle}
+\newcommand{\proj}[1]{\lvert #1 \rangle\!\langle #1 \rvert}
+\newcommand{\tr}{\operatorname{tr}}
+\newcommand{\ptr}[1]{\operatorname{tr}_{#1}}
+\newcommand{\id}{\mathrm{id}}
+\newcommand{\rank}{\operatorname{rank}}
+
+% Semantic brackets, hand-set: stmaryrd is on ACM's list but is not everywhere
+% installed, and a macro that fails elsewhere is worse than one two characters
+% longer.
+\newcommand{\den}[1]{[\![#1]\!]}
+\newcommand{\denin}[2]{[\![#1]\!]_{#2}}
+
+% --- the language ----------------------------------------------------------
+\newcommand{\dropkw}{\kw{drop}\xspace}
+\newcommand{\newkw}{\kw{new}\xspace}
+\newcommand{\newdirtykw}{\kw{newdirty}\xspace}
+\newcommand{\gatekw}{\kw{gate}\xspace}
+\newcommand{\liftkw}{\kw{lift}\xspace}
+\newcommand{\releasekw}{\kw{release}\xspace}
+\newcommand{\borrowkw}{\kw{borrow}\xspace}
+\newcommand{\measurekw}{\kw{measure}\xspace}
+
+% --- contexts, types, judgements -------------------------------------------
+\newcommand{\ctx}{\Gamma}
+\newcommand{\ctxalt}{\Delta}
+\newcommand{\qty}{Q}
+\newcommand{\emptyctx}{\cdot}
+\newcommand{\trace}{\tau}
+\newcommand{\core}{K}
+
+% The constructs, in math mode. Keywords are always the code font, in a rule
+% as in a program; type constructors and predicates are sans-serif.
+\newcommand{\drop}{\texttt{drop}}
+\newcommand{\lift}{\texttt{lift}}
+\newcommand{\meas}{\texttt{meas}}
+\newcommand{\new}{\texttt{new}}
+\newcommand{\tmp}{\mathsf{tmp}}
+\newcommand{\vis}{\mathsf{vis}}
+\newcommand{\allocFree}{\mathsf{allocFree}}
+\newcommand{\sep}{\mathrm{sep}}
+\newcommand{\Z}{\mathbb{Z}}
+
+% Every judgement is built from these, so a change of turnstile is one line
+% and not a grep.
+\newcommand{\jty}[3]{#1 \vdash #2 : #3}
+\newcommand{\jstep}[2]{#1 \longrightarrow #2}
+\newcommand{\jsteps}[2]{#1 \longrightarrow^{*} #2}
+\newcommand{\jequiv}[3]{#1 \vDash #2 \simeq #3}
+
+
+% ===========================================================================
+% 5. RULES
+%
+%   \jrule{Name}{premises}{conclusion}          premises separated by \\
+%   \jaxiom{Name}{conclusion}                   a rule with no premises
+%   \begin{rules} ... \and ... \end{rules}      several rules together
+%   \begin{ruledisplay} ... \end{ruledisplay}   the same, as its own paragraph
+%
+% mathpartir is not on ACM's production list. Every rule display goes through
+% these four, so replacing the backend is an edit to this block and to no
+% section.
+% ===========================================================================
+
+\newcommand{\jrule}[3]{\inferrule*[right={\rulename{#1}}]{#2}{#3}}
+\newcommand{\jaxiom}[2]{\inferrule*[right={\rulename{#1}}]{\ }{#2}}
+
+\newenvironment{rules}{\begin{mathpar}}{\end{mathpar}}
+\newenvironment{ruledisplay}
+  {\par\ruleskip\begin{mathpar}}
+  {\end{mathpar}\par\ruleskip}
+
+
+% ===========================================================================
+% 6. STATUS MARKERS
+%
+%   \revising{...}, \begin{revisingblock}...  prose still being reworked:
+%                                            a blue rule and a small tag.
+%   \begin{planned}{heading}...              a result that belongs here and
+%                                            is not written yet.
+%
+% A reader who skips every marked block is reading the part that is finished.
+% ===========================================================================
+
+\usepackage{framed}
+
+\definecolor{revink}{HTML}{2B6CB0}
+\definecolor{planink}{HTML}{9A5B00}
+\definecolor{planbg}{HTML}{FDF3E3}
+
+\newcounter{revcount}
+\newcounter{plancount}
+
+% Run-in, not on a line of its own: fourteen of these cost fourteen lines.
+\newcommand{\revtag}{%
+  {\color{revink}\sffamily\bfseries\scriptsize In revision\hspace{0.9em}}}
+
+\newcommand{\revising}[1]{%
+  \par\vskip 0.25\baselineskip%
+  \stepcounter{revcount}%
+  \begingroup
+    \def\FrameCommand{{\color{revink}\vrule width 1.6pt}\hspace{0.6em}}%
+    \MakeFramed{\advance\hsize-\width\FrameRestore}%
+    \noindent\revtag #1%
+    \endMakeFramed
+  \endgroup
+  \par\vskip 0.25\baselineskip\noindent\ignorespaces}
+
+\newenvironment{revisingblock}
+  {\par\vskip 0.25\baselineskip%
+   \stepcounter{revcount}%
+   \def\FrameCommand{{\color{revink}\vrule width 1.6pt}\hspace{0.6em}}%
+   \MakeFramed{\advance\hsize-\width\FrameRestore}\noindent\revtag\ignorespaces}
+  {\endMakeFramed\par\vskip 0.25\baselineskip}
+
+\newcommand{\revisinginline}[1]{{\color{revink}#1}}
+
+% A planned result: what it will claim, and that it is not claimed here.
+% Breakable (framed's \MakeFramed, not an lrbox): an unbreakable box that does
+% not fit at the foot of a page pushes itself whole to the next one and leaves
+% the gap behind, which is a page every few boxes.
+%
+% Marked by a rule, never by a fill. A \colorbox in \FrameCommand pushes its
+% colour on the colour stack and \endMakeFramed never pops it once the box
+% splits across a page, so the rest of the document prints in the fill colour.
+% Nothing inside these environments may open a colour that stays open across a
+% line: the rule and the tag word carry the signal, and the body is set in the
+% text colour.
+\newenvironment{planned}[1]
+  {\par\vskip 0.45\baselineskip%
+   \stepcounter{plancount}%
+   \def\FrameCommand{{\color{planink}\vrule width 1.6pt}\hspace{0.6em}}%
+   \MakeFramed{\advance\hsize-\width\FrameRestore}%
+   \noindent{\color{planink}\sffamily\bfseries\scriptsize Planned\hspace{0.9em}}%
+   \small\ignorespaces}
+  {\endMakeFramed\par\vskip 0.45\baselineskip\noindent\ignorespaces}
+
+% An outline: a summary standing in for a section, not an argument.
+\newenvironment{outlinebox}[1]
+  {\par\vskip 0.45\baselineskip%
+   \def\FrameCommand{{\color{accent}\vrule width 1.6pt}\hspace{0.6em}}%
+   \MakeFramed{\advance\hsize-\width\FrameRestore}%
+   \noindent{\color{accent}\sffamily\bfseries\scriptsize Outline\hspace{0.9em}}%
+   \small\ignorespaces}
+  {\endMakeFramed\par\vskip 0.45\baselineskip\noindent\ignorespaces}
+
+% Surviving a PDF-string context.  \title and \section are written into PDF
+% metadata by hyperref, which expands their arguments with \pdfstringdef; a
+% marker that builds a coloured box cannot be expanded there and the build
+% dies pointing at an unrelated line.  So in a PDF string they degrade to
+% plain text.
+\pdfstringdefDisableCommands{%
+  \def\revising#1{#1}%
+  \def\revisinginline#1{#1}%
+}
+
+
+% ===========================================================================
+% 7. EVIDENCE TIERS
+%
+% A tag certifies checking, never novelty, and prints only where the text
+% names the module that does the checking.
+% ===========================================================================
+
+\newcommand{\tier}[1]{{\normalfont\scshape\footnotesize\color{muted}[#1]}}
+\newcommand{\replayed}{\tier{replayed}}
+\newcommand{\classical}{\tier{classical}}
+\newcommand{\opentier}{\tier{open}}

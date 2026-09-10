@@ -1,0 +1,1650 @@
+% ===========================================================================
+%   DROPPING A QUANTUM TEMPORARY -- the paper.
+%
+%   Build:  make paper      full.pdf and supplement.pdf
+%           make figures    figures/*.tex -> PDF (acmart never sees tikz)
+%
+%   Two markers say what is settled.  A blue rule and "In revision" means the
+%   prose is still being reworked; a boxed "Planned" means the result belongs
+%   here and is not written yet.  Skip both and you are reading the finished
+%   document.  Their definitions are part 6 of preamble.tex.
+%
+%   Statements shared with the supplement are macros in statements.tex, so
+%   the two documents cannot drift.  Appendices live in supplement.tex, a
+%   separate PDF: a \cref into it does not resolve, so say "the supplement,
+%   Appendix A".
+%
+%   Do not add a package without reading the head of preamble.tex, do not
+%   change the class options, do not call \inferrule directly (use \jrule /
+%   \jaxiom), and draw figures in figures/ rather than inline.
+% ===========================================================================
+
+\documentclass[acmsmall,screen,review,anonymous,nonacm]{acmart}
+
+\input{preamble}
+\input{statements}
+
+\settopmatter{printacmref=false, printfolios=true}
+\setcopyright{none}
+\acmConference[Under review]{Submitted for double-blind review}{}{}
+\acmYear{2026}
+
+\begin{document}
+
+\title{Dropping a Quantum Temporary}
+
+\author{Author Name}
+\orcid{0000-0000-0000-0000}
+\affiliation{%
+  \institution{Indiana University}
+  \city{Bloomington}
+  \state{Indiana}
+  \country{USA}}
+\email{sdkadu@iu.edu}
+
+\begin{CCSXML}
+<ccs2012>
+<concept>
+<concept_id>10011007.10011006.10011039</concept_id>
+<concept_desc>Software and its engineering~Formal language definitions</concept_desc>
+<concept_significance>500</concept_significance>
+</concept>
+<concept>
+<concept_id>10003752.10003790.10003806</concept_id>
+<concept_desc>Theory of computation~Programming logic</concept_desc>
+<concept_significance>300</concept_significance>
+</concept>
+</ccs2012>
+\end{CCSXML}
+\ccsdesc[500]{Software and its engineering~Formal language definitions}
+\ccsdesc[300]{Theory of computation~Programming logic}
+
+\keywords{quantum programming languages, uncomputation, ancilla, deallocation,
+dynamic lifting, type systems, contextual equivalence}
+
+\maketitle
+
+
+% Section 1 -- Introduction
+\section{Introduction}\label{sec:intro}
+
+Here is a simple two-gate quantum circuit. It allocates a qubit, applies a Hadamard,
+applies a second Hadamard, and asks the compiler to forget it:
+
+\begin{center}
+\includegraphics{figures/two-gate}
+\end{center}
+
+\emph{Forget} here means something specific, and it is the subject of
+the paper: we want the qubit to go back to a free pool, and a later
+allocation should be able to \emph{reuse} it without reinitialising
+it. Qubits are the scarce resource. A compiler that cannot reuse a
+temporary allocates a fresh one, and the width of the program grows
+with every scratch value it ever computed. The established route to
+reuse is \emph{uncomputation}: run the computation that produced the
+scratch value backwards, so that the qubit is provably back at
+$|0\rangle$, and hand it to the pool clean. That is one way to make
+reuse safe. This paper asks what reuse actually requires, and the
+answer is, perhaps surprisingly, weaker than restoration: the qubit
+need not be back at $|0\rangle$, but it must carry no information the
+rest of the program can read. What we certify is the state in which a
+temporary may be released; the allocator itself, and what it means to hand the
+same qubit out again under a measurement record, are outside the model.
+
+Every classical model of computation throws things away for free---a
+Turing machine overwrites its tape, a $\beta$-reduction discards its redex,
+a stack pops---because overwriting is a primitive irreversible operation
+there, and the classical alternatives it hides cannot interfere. Bennett's
+reversible machine buys the discarded value back, ending with its output
+beside ``a reconstructed copy of the input''~\cite{Bennett1973Logical}. A
+superposition of control withdraws the licence. The temporary is a tensor
+factor of the state space and not one alternative among several, so discarding
+it is not the choosing of a branch: the joint state pairs each temporary basis
+vector with a visible vector of its own, and the inner products among those
+decide what interference survives. That is why \emph{forget} has content here, and why its
+condition cannot be read off how the value was produced.
+
+In Silq~\cite{Bichsel2020Silq} the circuit is the program:
+\begin{center}
+\begin{tabular}{@{}p{0.34\linewidth}@{\qquad}p{0.52\linewidth}@{}}
+\begin{minipage}[t]{\linewidth}
+\centering\ttfamily
+\begin{tabular}[t]{@{}l@{}}
+t0 := 0:B;\\
+t1 := H(t0);\\
+t := H(t1);\\
+forget(t);
+\end{tabular}
+\end{minipage}
+  &
+    \small The register is $|0\rangle$: two Hadamards compose to the identity.
+    Discarding it is safe, and Silq agrees that it is safe if we use the variant
+    \code{forget(t=0:B)}. The automatic \code{forget}, however,
+    is refused with error: \emph{cannot synthesize forget expression.}
+\end{tabular}
+\end{center}
+
+The refusal is not really a bug: Silq's rule asks how the value
+was \emph{produced}, not what the register \emph{is}. For Silq, $H$ is
+not \code{qfree}, which is Silq's word for an operation whose
+semantics ``can be described classically'' and which never creates
+superposition~\cite[\S4.1]{Bichsel2020Silq}, so no uncomputation can
+be synthesised for \code{t}, and the automatic \code{forget} is
+refused. Unqomp refuses it as well for the same reason: it synthesises
+uncomputation rather than checking it, and its correctness section
+shows why a non-\code{qfree} gate on an ancilla defeats the
+mechanism~\cite{Paradis2021Unqomp}. The other kind of existing check
+accepts this program, for an instructive reason. Q\# requires a
+released qubit to be back in the state it was allocated
+in~\cite{Svore2018Qsharp,MicrosoftQsharpMemory}, and Quipper's
+\code{with\_ancilla} closes on the programmer's promise of the
+same~\cite{Green2013Quipper}. Here the register \emph{is} back at
+$|0\rangle$. Program (a) below is where those rules refuse a safe
+drop. Every rule of either kind draws a line through the safe
+programs, and the systems that publish their rule say so: ReQWIRE
+calls its syntactic conditions ``sufficient but not
+necessary''~\cite{Rand2019ReQWIRE}, and Qutes calls its own detection
+``necessarily incomplete''~\cite{Faro2026Qutes}. Silq is the one we
+ran, and \cref{sec:related} compares the rest.
+
+So the gap is known and in print. \emph{The gap:} a drop is safe when
+no continuation of the program can observe it, that is, when the
+temporary carries no information about the visible register at the
+moment it is dropped. The existing checks ask about the program's
+syntax instead---how the value was produced, whether the register is
+back where it started, who owns it and for how long---and
+\cref{sec:overview} sets the three against each other. Neither of the
+first two is complete, and the two programs above are the witnesses:
+the two-gate circuit is a safe drop the producer check refuses, and
+program (a) is a safe drop the restoration check refuses. The recent
+tools decide a neighbouring predicate at circuit level: whether a
+circuit restores its ancilla~\cite{Li2026AncillaSafety}, whether a
+restoring uncomputation exists~\cite{Liu2026Uncomputation}, and how to
+schedule borrows given blocks already safe~\cite{Xu2026Bona}. Drop
+safety as we formulate it here lies strictly between restoration and
+restorability. Call a program \emph{restored} when it itself returns the
+temporary to the state it was allocated in, and \emph{restorable} when some
+continuation could~\cite{Liu2026Uncomputation}. In the unrestricted
+measurement-free calculus
+\emph{restored} implies \emph{safe to drop} implies \emph{restorable},
+and neither converse holds: program (a) is safe and not restored, and
+Bennett's compute--copy--uncompute, with its target counted into the
+temporary, is restorable and, unless its circuit is constant, not safe
+(\cref{sec:cost}). Over a fixed coefficient ring the second
+implication asks for more---the splitting condition of
+\cref{sec:gateset}, and over a finite repertoire an exact-synthesis
+step besides. None of those three tools reads a program with
+measurement, where the verdict may depend on the measurement record
+(\cref{sec:boundary}). We ask two questions about the gap. \emph{What
+  is the condition, stated as a property of programs rather than of
+  matrices?} And \emph{can the gap be closed at all?} The first has an
+exact answer. The second has an exact answer too, and it is
+negative---but only past a boundary we can draw, and the negative has
+a type that the natural way of stating it gets wrong.
+
+\subsection*{Three programs}
+
+We work in a small language with one scoped temporary $t$, one visible
+register $v$, and an affine $\drop$ whose typing rule carries no side
+condition. A side condition would
+have to say \emph{this temporary is uncorrelated from $v$}, a fact
+about what the program computes, and a rule that demanded it would
+make the unsafe programs untypable, so the checks that refuse them
+could not be compared.
+
+The \emph{temporary} $t$ is the ancilla of the quantum computing
+literature: a register allocated inside a scope and dropped at its
+end. The \emph{visible} register $v$ is everything else in scope---the
+data qubits---and it is called visible because it is what the rest of
+the program can see after the drop. Both are \emph{registers} of
+arbitrary finite dimension, so ``one temporary and one visible
+register'' is not two qubits unless the dimension is fixed at two. An $n$-qubit
+workspace is a visible register of dimension $2^n$, and several
+temporaries in nested scopes compose into one big temporary of product
+dimension with the verdict preserved exactly (\cref{sec:many}). The
+results therefore apply to programs of any width, and \cref{sec:eval}
+runs the checker on eight textbook algorithms. \Cref{sec:gateset} is the one
+section needing a ring-theoretic input, the column lemmas of the
+exact-synthesis literature, and it says which rings have them. One
+temporary is the smallest system in which the question has content:
+without the visible register there is no observer, and without joint
+gates there is no channel. An impossibility is only as strong as its
+hypotheses are weak, so the negatives are proved there on purpose.
+
+Each program below allocates the temporary, computes, and drops it.
+A run leaves the temporary \emph{constant} when it leaves it in one fixed
+state independent of the input.
+
+\exRunning
+
+Program (a) superposes the temporary and drops it. Its final state is
+$|{+}\rangle$ whatever the input: constant, uncorrelated with $v$, and not
+$|0\rangle$.
+
+Program (b) reads the temporary into $v$ before dropping it. It
+is the one-line proof that the affine rule cannot be silent: after the read,
+$v$ and $t$ are entangled, and forgetting $t$ decoheres $v$.
+
+A gate in this language is any orthogonal matrix
+  (\cref{def:calculus}), and the $\mathit{tilt}$ gate in program (c) is
+  $\mathit{tilt} = \tfrac13\bigl(\begin{smallmatrix} 2 & 2 & 1 \\ 2 & -1 & -2 \\ 1 & -2 & 2
+\end{smallmatrix}\bigr)$, with $\mathit{tilt}\,|0\rangle = \tfrac13(2,2,1)$.
+
+Program (c) measures the temporary, then reads it into $v$ and drops
+it, and no gate after the measurement branches on the outcome. The
+gate $\mathit{tilt}$ is an orthogonal gate on a three-dimensional
+temporary, chosen so that the measured block $S = \{0,1\}$ and its
+complement both survive with nonzero weight. Which block survives is
+decided at run time. On one outcome the drop is safe, on the other it
+is not, and nothing in the program's syntax says which run is
+happening.
+
+\subsection*{Why discard is not free here}
+
+In some languages this question has no content. In the quantum $\lambda$-calculus quantum data is affine
+and discard is a typing rule that asks
+nothing~\cite{SelingerValiron2006}, because discard is a partial trace
+over a density-matrix semantics: the continuation receives the reduced
+state of the registers it can still name, which is correct whatever
+the discarded register held, and that register is never reused. Here
+we want it reused. The compiler traces nothing, and it hands
+the same physical qubit to the next allocation, on the promise that
+the next allocation will find nothing in it. \Cref{sec:calculus} makes
+the promise precise: \textsc{Drop} has no side condition, the
+elaboration of $\drop$ is the identity, and the result type of a
+program, which no longer mentions the temporary, asserts that no
+continuation will look at it. So the promise is the affine rule's
+\emph{premise}, not its conclusion, and the rule leaves it unchecked
+on purpose: the programs that break it must be expressible, as
+program (b) of \cref{ex:three} is, well typed with a wrong drop.
+
+\subsection*{What a compiler gets, and what it pays}
+The criterion is \emph{stated} on programs and \emph{decided} on
+matrices, and the two are not in tension. Stated: a drop is safe when
+the program is equivalent to one that never touched the temporary, a
+sentence with no matrix in it (\cref{sec:criterion}). Decided: the
+program text names its gates, each gate is a matrix, and multiplying
+them in the order the text gives yields the denotation $K$
+(\cref{sec:calculus}). The decision then is a rank test on $K$,
+static, needing neither an input nor a run. The price is a
+proportionality test on the $d$ Kraus operators, each an $m \times m$
+matrix: polynomial in the joint dimension $dm$, hence exponential in
+the qubits in scope, the cost of writing the denotation down at all.
+Once the verdict depends on which outcome occurred, one verdict for
+all records is wrong on one of them, and a sound one is wrong by refusing a
+safe run (\cref{sec:boundary}). From
+\cref{sec:residual} a compiler gets instead a table with one row per
+measurement record, at most $2^{\ell}$ for $\ell$ lifted measurements
+on the command's longest path, each row one proportionality test,
+computed before the run and consulted at run time by a lookup on the
+classical outcomes, and $\ell$ is at most two in the programs of
+\cref{sec:eval}.
+
+\subsection*{Contributions}
+
+\begin{itemize}
+  \item \textbf{Measurement-free: an exact criterion on the program text}
+        (\cref{sec:criterion}). Three conditions on a typed program coincide:
+        it is \emph{weakenable}, some typed program that prepares the temporary
+        once and never touches it again having the same denotation; it is
+        \emph{drop-safe}, its temporary ending in one fixed state whatever the
+        input; and no continuation can distinguish it from a program of that
+        shape (\cref{thm:criterion,thm:ctxequiv}). All three say the channel
+        the drop induces has Kraus rank one (\cref{thm:bridge}), a finite
+        computation on the matrix the program's gates multiply out to.
+        The rank-one arithmetic is textbook---the Choi rank of an \emph{isometric channel}~\cite{Choi1975CP,Kraus1983States,Watrous2018TQI}---and what is ours is that it is asked of a program's denotation.
+        Restoring the temporary to where it was allocated is this criterion
+        pinned to one ray, and it refuses eight of the twelve safe catalogue
+        programs, Deutsch--Jozsa among them.
+  \item \textbf{With measurement: a verdict fixed before the run is
+        incomplete} (\cref{sec:boundary}). We extend the calculus with
+        measurement, following Proto-Quipper's \emph{dynamic
+        lifting}~\cite{Fu2023DynamicLifting}; a typed program of the affine
+        calculus elaborates to a lift-free command of it, with the same
+        denotation. Within the extension we exhibit a well-typed command
+        with two reachable measurement records of opposite verdict on the
+        same drop, and no \emph{sound} record-oblivious verdict keeps the
+        safe one: the commands on which a safe run must be lost are exactly
+        the outcome-dependent ones (\cref{sec:boundary}), which the presence
+        of a lift does not characterise.
+  \item \textbf{One exact repair: a record-indexed table}
+        (\cref{sec:residual}). The boundary forces record awareness---the
+        missing bit exists only after the measurement---and one exact
+        realisation is a table emitted before the run, one row per record and
+        at most $2^{\ell}$ rows for $\ell$ lifts, each row the proportionality
+        test of \cref{sec:criterion}: the static analysis's own cost, once per
+        record. The table is exact on the very command where a sound
+        record-oblivious verdict must lose a safe run.
+\end{itemize}
+
+\begin{outlinebox}{gate arithmetic, and the price of the verdict}
+\Cref{sec:gateset,sec:cost}, in summary. Over a gate ring completable in the
+temporary's dimension the criterion acquires one side condition, that the
+projector onto the final state factor as $zz^{\dagger}$ over the ring: automatic
+over the Clifford$+T$ ring, false over its real subring. Deciding is
+coNP-complete already on permutation programs.
+\end{outlinebox}
+
+\begin{outlinebox}{composition, lifetimes, and the implementation}
+\Cref{sec:many,sec:eval}, in summary. Composition reduces several temporaries
+to one, though dropping them one at a time can cost a square root; typing
+splits per lifetime and drop safety does not. Two decision procedures sharing
+no code but one arithmetic backend agree on every catalogue verdict.
+\end{outlinebox}
+
+
+% Section 2 -- The idea, on three programs
+\section{The idea, on three programs}\label{sec:overview}
+
+This section carries the three programs of \cref{ex:three} through the
+whole paper informally.
+
+\subsection{The temporary is the scrutinee of an invisible switch}
+
+From a language implementation perspective the whole idea is that a
+quantum program with a temporary of dimension $d$ is a \code{switch}
+with $d$ branches. The scrutinee is the temporary's basis state: the
+$i$th branch is what the program does to the visible register when the
+temporary is in state $|i\rangle$. Call that branch's action $K_i$. It
+is an $m \times m$ matrix on the visible register, read off the
+program's denotation $K$ as the block of rows labelled $i$:
+\[
+  K v \;=\; \sum_{i=0}^{d-1} |i\rangle \otimes K_i v ,
+  \qquad K_i = (\langle i| \otimes I)\,K .
+\]
+The $K_i$ are the \emph{Kraus operators}\revisinginline{~\cite{Kraus1983States}} of the channel
+that dropping the temporary induces on the visible register: tracing the temporary out of
+$K\rho K^{\dagger}$ leaves
+$\rho \mapsto \sum_i K_i \rho K_i^{\dagger}$. Quantum mechanics adds
+one thing to the switch: every branch runs, and the results are kept
+side by side, each labelled by its branch. The label captures the
+difficulty: the temporary holds a memory of what happened to the
+visible register, and a memory is exactly what a drop must not throw
+away while anyone downstream can read it.
+
+Now $\drop\ t$ deletes the scrutinee, and the question is whether
+anybody downstream can tell. If every branch does the same thing,
+which in matrices means $K_i = g_i\,W$, one visible action $W$ scaled
+differently per branch, then the switch was fake: the program's
+behaviour never depended on the scrutinee, deleting it changes
+nothing, and thus the drop is safe. If two branches do
+\emph{different} things, the switch was real: the downstream code
+behaves one way when the temporary went left and another when it went
+right, so the temporary recorded something about the visible input,
+and deleting it destroys a correlation that was there. So the safety
+of a drop is a proportionality condition: the Kraus operators
+$K_0, \ldots, K_{d-1}$ are pairwise proportional, all scalar multiples
+of one isometry $W$. Equivalently, the channel the program induces has
+\emph{Kraus rank one}: it is conjugation by that one isometry. On the matrix
+a program's gates multiply out to, that is a finite calculation in exact
+arithmetic, so the verdict is decided and not estimated.
+
+The arithmetic is not new. That a channel is
+$\rho \mapsto \sum_i K_i \rho K_i^{\dagger}$, that two families of operators
+describe one channel exactly when an isometry relates them---a unitary, once
+the shorter family is padded with zeros---and that the fewest a channel needs
+is the rank of its Choi matrix, the \emph{Choi rank}, are the standard
+structure theory of channels~\cite{Kraus1983States,Choi1975CP,Watrous2018TQI},
+and rank one is its smallest case, the \emph{isometric channel}. What is new is what the rank is asked about: the
+denotation of a \emph{program}.
+
+\begin{figure}
+\centering
+\includegraphics{figures/criterion}
+\caption{The criterion. A triangle starts a register in a fixed state and
+the bars end one, which is $\drop$.\newline
+\textbf{Left:} any program of the calculus.\newline
+\textbf{Middle:} the drop-safe shape (\cref{def:core}): the temporary comes
+out in one state $g$ whatever $v$ was, and nothing crosses between the
+registers.\newline
+\textbf{Right:} the weakenable shape (\cref{def:sw}): the temporary is
+prepared by one gate $R$ and dropped, never having met $v$.\newline
+The left program is drop-safe exactly when it equals the middle, and
+\cref{thm:criterion} says that is exactly when it equals the right.}
+\Description{Three circuit diagrams joined by equals signs: an arbitrary
+two-register unitary, then a product of a fixed temporary state with a
+visible gate, then a temporary prepared by one gate beside a visible gate.}
+\label{fig:criterion}
+\end{figure}
+
+\subsection{Program (a) is safe, and it does not restore anything}
+Program (a) applies $H$ to the temporary and nothing else. Program (b)
+then reads the temporary into $v$ by \textsc{cnot}. Write each
+denotation as a matrix, rows indexed by the temporary's level first, so
+that the rows at level $0$ form $K_0$ and those at level $1$ form $K_1$:
+\begin{center}
+\small
+\begin{minipage}[t]{0.47\linewidth}
+\raggedright
+Program (a) sends $v$ to $\tfrac1{\sqrt2}(|0\rangle + |1\rangle) \otimes v$:
+\par\smallskip\centerline{$
+  K_{\mathrm{(a)}} \;=\; \tfrac1{\sqrt2}
+  \begin{pmatrix}
+    {\color{accent}1} & {\color{accent}0} \\
+    {\color{accent}0} & {\color{accent}1} \\
+    {\color{accentwarm}1} & {\color{accentwarm}0} \\
+    {\color{accentwarm}0} & {\color{accentwarm}1}
+  \end{pmatrix}
+  \begin{array}{@{}l@{}}
+    \left.\begin{matrix}\phantom{0}\\ \phantom{0}\end{matrix}\right\}
+      {\color{accent}K_0 = \tfrac1{\sqrt2} I} \\
+    \left.\begin{matrix}\phantom{0}\\ \phantom{0}\end{matrix}\right\}
+      {\color{accentwarm}K_1 = \tfrac1{\sqrt2} I}
+  \end{array}
+$}\par\smallskip
+One visible action, scaled the same on both branches: the switch is
+fake and the drop is safe, though the temporary ends in $|{+}\rangle$,
+not where it started.
+\end{minipage}\hfill
+\begin{minipage}[t]{0.47\linewidth}
+\raggedright
+Program (b) sends $v$ to $\tfrac1{\sqrt2}(|0\rangle \otimes v + |1\rangle \otimes Xv)$:
+\par\smallskip\centerline{$
+  K_{\mathrm{(b)}} \;=\; \tfrac1{\sqrt2}
+  \begin{pmatrix}
+    {\color{accent}1} & {\color{accent}0} \\
+    {\color{accent}0} & {\color{accent}1} \\
+    {\color{accentwarm}0} & {\color{accentwarm}1} \\
+    {\color{accentwarm}1} & {\color{accentwarm}0}
+  \end{pmatrix}
+  \begin{array}{@{}l@{}}
+    \left.\begin{matrix}\phantom{0}\\ \phantom{0}\end{matrix}\right\}
+      {\color{accent}K_0 = \tfrac1{\sqrt2} I} \\
+    \left.\begin{matrix}\phantom{0}\\ \phantom{0}\end{matrix}\right\}
+      {\color{accentwarm}K_1 = \tfrac1{\sqrt2} X}
+  \end{array}
+$}\par\smallskip
+Two different visible actions. The switch is real, and the drop is
+wrong.
+\end{minipage}
+\end{center}
+The checker of \cref{sec:eval} also forms the Gram matrix
+$\Gamma_{ij} = \operatorname{tr}(K_i^{\dagger} K_j)$ (\cref{prop:gram}):
+$\bigl(\begin{smallmatrix} {\color{accent}1} & {\color{accent}1} \\
+{\color{accentwarm}1} & {\color{accentwarm}1} \end{smallmatrix}\bigr)$ of rank
+one for (a), the two rows equal, and
+$\bigl(\begin{smallmatrix} {\color{accent}1} & {\color{accent}0} \\
+{\color{accentwarm}0} & {\color{accentwarm}1} \end{smallmatrix}\bigr)$ of rank
+two for (b). The channel is what the
+rest of the program sees: after the drop the visible register carries
+$\sum_i K_i \rho K_i^{\dagger}$ and nothing else. For program (a) that
+is $\rho$, the input untouched. For program (b) it is
+$\tfrac12\rho + \tfrac12 X\rho X$, a bit flip with probability one half,
+which a continuation that reads $v$ can tell.
+
+When we say \emph{the temporary is left constant} we do not mean
+untouched: program (a) moves the temporary to $|{+}\rangle$, for every
+input. Nor do we mean \emph{a product at each input}: the copy
+$t := t \oplus v$ leaves a product on $|0\rangle$ and on $|1\rangle$
+and a Bell state on $|{+}\rangle$, and even a product at \emph{every}
+input admits programs the definition excludes, the swap of $t$ and $v$
+among them (\cref{prop:productwise}).
+
+\Cref{sec:criterion} says the same thing in the words a language can
+use. Program (a) is \emph{weakenable}: weakening is the structural rule that
+lets a hypothesis go unused, and program (a) has the denotation of a program
+whose temporary is unused, the right-hand picture of \cref{fig:criterion}
+with $R = H$ and $W = I$. The equivalence is contextual in the sense
+familiar from the $\lambda$-calculus: the contexts are the continuations of
+the calculus, a gate on the visible register after the scope followed by a
+measurement, and a program is weakenable exactly when no continuation
+distinguishes it from some program of that shape (\cref{thm:ctxequiv}). So
+\emph{this temporary may be dropped} and \emph{no continuation can tell} are
+one statement, and the proportionality test decides it.
+
+\subsection{What the existing checks see}
+
+We encountered three kinds of check in the literature, and each
+asks a question about the syntax. A \emph{producer-based}
+check---Silq's \code{forget} and Unqomp's synthesised
+uncomputation~\cite{Bichsel2020Silq,Paradis2021Unqomp}---asks how the
+value was produced: only values produced classically may be forgotten.
+A \emph{restore-based} check---Q\# at release and Quipper's
+\code{with\_ancilla}
+promise~\cite{Svore2018Qsharp,MicrosoftQsharpMemory,Green2013Quipper}---asks
+whether the register is back in the state it was allocated in. A
+\emph{lifetime} check---Cavy, Qurts and
+Qutes~\cite{McNally2021Cavy,Hirata2025Qurts,Faro2026Qutes}---asks who
+owns the register and how long it lives, and enforces or synthesises
+restoration at the boundary; it answers a different question, whether
+cleanup can be inserted, not whether the temporary may be dropped in
+the state the program leaves it in. The first two miss different
+programs. A producer check refuses a value produced non-classically
+that is uncorrelated by the time it is dropped, which is program (a);
+a restore check refuses every program leaving the temporary constant
+anywhere but $|0\rangle$, however produced. Safety is about
+\emph{correlation}, not \emph{location}. Deutsch--Jozsa is refused by
+both: its kickback ancilla is prepared in $|{-}\rangle$ by a
+non-classical gate, used, and left there (\cref{sec:dj}).
+
+\subsection{Program (c): one text, two verdicts}
+
+\begin{figure}
+\centering
+\includegraphics{figures/outcome-split}
+\caption{Program (c). The allocated state is tilted so that it has a foot in
+the measured block and a foot outside it. Reading the program determines the
+verdict on each foot: refuse if the block survives, admit if its complement
+does. What reading the program cannot determine is which foot survives: the
+measurement decides that when the program runs, dynamic lifting hands that one
+bit to the compiled code, and the check of \cref{sec:residual} reads it there.
+$X$ is the shift $|j\rangle \mapsto |j+1\rangle$ the read applies to the
+visible register.}
+\Description{The tilted allocated state drawn against the measured block,
+with the two outcome branches leading to opposite verdicts on the drop.}
+\label{fig:split}
+\end{figure}
+
+Program (c) measures the temporary and then reads it, and no later
+gate branches on the outcome---yet the verdict does. \Cref{fig:split} is the
+whole difficulty in one picture: one program, two reachable outcomes, two
+verdicts. Now ask what a
+record-oblivious verdict---a function from commands to booleans---can do with
+its one boolean. If it says \emph{yes}, it has accepted a drop that is wrong on
+the branch of weight $8/9$, so it is unsound. If it says \emph{no}, it has
+refused a drop that is safe on the branch of weight $1/9$, so it is incomplete
+there. Nothing
+about the syntax distinguishes the two branches, and \cref{sec:boundary}
+makes that a theorem with a quantifier on it (\cref{sec:boundary}).
+
+Nothing here runs a program. On a measurement-free scope the verdict is a
+function of the program text alone; after a measurement the missing argument is
+which outcomes survived, not an input. Reading the program fixes the verdict on
+every outcome, but not which outcome the run is on, and statistics are the
+wrong instrument for the same reason (\cref{sec:channel}).
+
+\subsection{The check at the lift}
+
+The shape of the failure dictates the shape of the fix. A static
+analysis must emit its boolean before the run, but the deciding fact
+does not exist until the run, after the measurement. So we emit
+instead a predicate on the classical outcome, whose table the compiler
+computes before the run and consults at the \emph{lift}, where a
+measurement outcome becomes available to compiled code. In plain words: the
+compiler decides the drop for every outcome the measurement could have, and
+the run looks up the one that happened. That outcome is all the run
+contributes. For program (c) it is one
+classical bit, whether the block $S$ survived, and it selects the row.
+\Cref{sec:residual} will prove it sound and complete where every static
+analysis is not, at one proportionality test per record.
+
+\begin{keyidea}
+A drop is safe when the rest of the program cannot tell: before measurement
+the program decides that exactly, by a proportionality test on its Kraus
+operators. After measurement
+the program is exactly one argument short---the measurement record---and a check at
+the lift supplies it.
+\end{keyidea}
+
+
+
+
+
+% Section 3 -- The calculus
+\section{The calculus}\label{sec:calculus}
+
+\Cref{sec:overview} was informal. This section fixes the language the theorems are about. Registers are real here and in \cref{sec:criterion}, so $\top$ is the
+$\dagger$ of the statements: drop safety is a proportionality condition and
+does not see the field. \Cref{sec:gateset}, where phase is the content, is
+complex throughout.
+
+\begin{definition}[the affine calculus]\label{def:calculus}
+Register and value types, and terms, are
+\[
+\begin{aligned}
+ Q \;&::=\; \tmp[d]\;\mid\;\vis[m],
+   \qquad\qquad
+   A,B \;::=\; Q\;\mid\;A\otimes B,\\[2pt]
+ e \;&::=\; v
+   \;\mid\; \langle v_1,v_2\rangle
+   \;\mid\; \texttt{let }t=\texttt{new }i_0\texttt{ in }e
+   \;\mid\; \texttt{let }(t',v')=U(t,v)\texttt{ in }e
+   \;\mid\; \drop\ t\,;e .
+\end{aligned}
+\]
+Contexts are finite partial maps from register names to register types, and
+the typing rules are
+\begin{ruledisplay}
+  \jaxiom{Var}{\jty{v:A}{v}{A}}
+\and
+  \jrule{Pair}{v_1\neq v_2}
+              {\jty{v_1:A,\,v_2:B}{\langle v_1,v_2\rangle}{A\otimes B}}
+\and
+  \jrule{New}{t\notin\operatorname{dom}(\Delta) \\ i_0\in[d] \\
+              \allocFree(e) \\ \jty{\Delta,\,t:\tmp[d]}{e}{C}}
+             {\jty{\Delta}{\texttt{let }t=\texttt{new }i_0\texttt{ in }e}{C}}
+\and
+  \jrule{Gate}{t\neq v \\ t'\neq v' \\
+               U:\R^{d}\otimes\R^{m}\to\R^{d}\otimes\R^{m} \\
+               U^{\top}U=UU^{\top}=I \\
+               \jty{\Delta,\,t':\tmp[d],\,v':\vis[m]}{e}{C}}
+              {\jty{\Delta,\,t:\tmp[d],\,v:\vis[m]}
+                   {\texttt{let }(t',v')=U(t,v)\texttt{ in }e}{C}}
+\and
+  \jrule{Drop}{\jty{\Delta}{e}{C}}
+              {\jty{\Delta,\,t:\tmp[d]}{\drop\ t\,;e}{C}}
+\end{ruledisplay}
+\end{definition}
+
+The binders $t'$ and $v'$ bind in $e$, and terms are identified up to
+$\alpha$-renaming. A \emph{program} is typed when
+$v : \vis[m] \vdash \texttt{let } t = \texttt{new } i_0 \texttt{ in } e : \vis[m]$.
+The result type is $\vis[m]$ rather than $\tmp[d]\otimes\vis[m]$,
+because we want the type to record that the temporary was weakened
+away. A \emph{gate} in \textsc{Gate} always acts on both registers at
+once. We call such a gate \emph{joint}, and a gate of the form
+$R \otimes I$ or $I \otimes W$ \emph{local}. Contexts are
+\emph{affine} in both halves. There is no contraction because copying
+a register is not a linear map (no-cloning). There is no
+\emph{implicit} weakening because implicit weakening is the entire
+subject of the paper: \textsc{Drop} is weakening made explicit, and
+under implicit weakening program (b) of \cref{ex:three} would type
+with its temporary silently forgotten. The premise $\allocFree(e)$ of
+\textsc{New}---the body of an allocation contains no second
+allocation---gives a program exactly one temporary scope, and
+\cref{sec:many} lifts this.
+
+\textsc{Drop} has no premise about safety, and that is not an
+oversight: if $\drop$ demanded safety as a premise, unsafe programs such as
+program (b) would not be \emph{expressible}, and the predicates that reject
+them could not be compared. \textbf{The result type $\vis[m]$ is a promise, not a
+guarantee.} The elaboration of $\drop$ is the identity, the temporary survives as a
+latent tensor factor, and the type asserts that no continuation will look at
+it. When the drop is unsafe the type is wrong about the denotation, and
+detecting exactly that is the rest of the paper. Typing is algorithmic and
+types are unique, the outermost constructor of $e$ selecting one rule whose
+premises are decided from $\Delta$ and $e$. The calculus admits an arbitrary orthogonal matrix as a gate, and
+\cref{sec:gateset} says what a \emph{finite} gate set costs on top of that.
+
+\subsection{The denotation, and drop safety}
+
+The rules say which programs exist. This subsection says what a
+program computes, and when its drop is safe. The temporary has state
+space $\R^{d}$ and the visible register $\R^{m}$, with $m \ge 1$
+throughout. A typed program elaborates to a straight-line list of
+gates by recursion on the term: allocation contributes the isometry
+$v \mapsto e_{i_0} \otimes v$, a gate contributes its matrix, and
+$\drop$ contributes nothing:
+\[
+\begin{gathered}
+  \den{\texttt{let } t = \texttt{new } i_0 \texttt{ in } e}
+    = \den{e} \circ (v \mapsto e_{i_0} \otimes v), \qquad
+  \den{\texttt{let } (t',v') = U(t,v) \texttt{ in } e}
+    = \den{e} \circ U, \\[2pt]
+  \den{\drop\ t\,; e} = \den{e}, \qquad \den{v} = I, \qquad
+  \den{\langle v_1,v_2\rangle} = \Pi_{v_1 v_2} ,
+\end{gathered}
+\]
+where $\Pi_{v_1v_2}$ permutes the context's tensor factors to put $v_1$ first
+and $v_2$ second, and is the identity when they already stand that way.
+The \emph{denotation} $K$ of a typed program is this composite, a linear map
+$\R^{m} \to \R^{d} \otimes \R^{m}$ computed from the program text alone by
+multiplying the matrices of the gates it names. It is an isometry, being an
+isometric allocation followed by unitaries. Norm preservation is the
+realizability fact typing supplies; absence of leakage is the rank-one
+condition below, and the two are different. (\Cref{sec:lifted} adds
+measurement, and \cref{thm:meta} there says that this same matrix is what its
+machine computes.)
+
+\begin{definition}[Kraus operators, drop safety]\label{def:core}
+For a linear map $K : \R^{m} \to \R^{d} \otimes \R^{m}$, its \emph{Kraus
+operators} are the $m \times m$ blocks $K_i = (\langle i| \otimes I)\,K$, so
+that $Kv = \sum_i |i\rangle \otimes K_i v$. The map $K$ is \emph{drop-safe}
+when $K = g \otimes W$ for a vector $g \in \R^{d}$ and a matrix $W$, that is,
+$Kv = g \otimes Wv$ for every $v$. A program is drop-safe when its denotation
+is.
+\end{definition}
+
+The name \emph{Kraus operators} is standard, and the channel is why. Discarding the temporary
+leaves the visible register in
+\[
+  \Phi(\rho) \;=\; \operatorname{Tr}_{\tmp}\bigl(K \rho K^{\top}\bigr)
+             \;=\; \sum_i K_i \rho K_i^{\top},
+\]
+the second equality by expanding the partial trace in the basis $|i\rangle$.
+That $K$ is an isometry is exactly $\sum_i
+K_i^{\top}K_i = I$, which makes $\Phi$ trace-preserving; over $\C$ every
+completely positive map has this form, and every such sum is completely
+positive~\cite{Choi1975CP,Kraus1983States}. Read backwards, $K$ is a dilation
+of $\Phi$ whose environment is the temporary, and the drop is the partial
+trace. The family is not unique---mixing by an isometry, $K'_j = \sum_i
+u_{ji}K_i$, gives the same channel---so what belongs to the channel is how
+many independent operators it has, not which they are, and that is the number
+the criterion reads.
+
+Drop safety says the temporary is \emph{constant} at the drop: it ends in
+the one state $g$ whatever the input, unentangled from the visible register.
+The force of the definition is the quantifier order, one $g$ for \emph{all}
+$v$. Four forms are equivalent, and each is used below: (1) $K = g \otimes
+W$; (2) the Kraus operators are pairwise proportional, $K_i = g_i W$; (3)
+every $2 \times 2$ minor of the $d \times m^{2}$ matrix $(i, (b,c)) \mapsto
+K_{(i,b),c}$ vanishes; (4) the Gram matrix $\Gamma_{ij} = \operatorname{tr}(K_i^{\top}
+K_j)$ of the Kraus operators has rank at most one. Form (3) is a finite
+computation on exact numbers, valid over any field, and \cref{sec:cost}
+prices it. Form (4) is form (3) compressed to $d \times d$: $\Gamma = MM^{\top}$ for
+the matrix $M$ of form (3), a Gram matrix has the rank of the family it is
+built from, and it is the form the checker cross-checks against. Since $K$ is
+an isometry,
+$\operatorname{tr}\Gamma = \sum_i \operatorname{tr}(K_i^{\top}K_i) = m$, and
+a positive semidefinite matrix of trace $m$ has rank at most one exactly when
+its eigenvalues are $m$ once and $0$ otherwise, that is, when
+\[
+  \Gamma^{2} = m\,\Gamma,
+  \qquad\text{equivalently}\qquad
+  \Bigl(\frac{\Gamma}{m}\Bigr)^{2} = \frac{\Gamma}{m} :
+\]
+the drop is safe exactly when $\Gamma/m$ is \emph{idempotent}, a rank-one
+projector, and then it is $gg^{\top}$ for the unit final state $g$, since
+$\operatorname{tr}(W^{\top}W) = m$ for the isometry $W$. That projector is
+the temporary's own state at the maximally mixed visible input
+(Appendix~A.5), and a state is idempotent exactly when it is pure. So the
+criterion has a one-line reading on the temporary alone: \emph{a drop is safe
+exactly when the temporary comes out pure at the maximally mixed visible
+input}. That reference input is not a convenience, as the next proposition
+shows. The pair $(g,W)$ is determined up to $(\lambda g, \lambda^{-1}W)$, so
+``unit $g$'' is a choice of representative; the zero map is drop-safe.
+
+Here is why that single reference input is enough, and why the obvious
+alternative is not the same test. A reader meeting \cref{def:core} may well
+ask what is wrong with checking the joint state \emph{at each input
+separately}: run the program on $v$, see whether what comes out is a product
+of a temporary state with a visible state, and repeat for every $v$. That is a
+weaker demand---it lets the temporary's state depend on $v$, where drop safety
+does not---and it is weak enough to admit programs that leak. The next
+proposition says exactly how much weaker: pointwise productness has only two
+solutions, and only the first of them is a safe drop.
+
+\begin{revisingblock}
+\stmtProductwise
+\end{revisingblock}
+
+The proof (Appendix~A.1) is linearity: two inputs whose temporary factors are
+not parallel force, through $K(v_1 + v_2)$, their visible factors to be
+parallel---so one of the two factors has to stand still, and which one it is
+gives the two cases. The second case is the leak. It puts the input into the
+temporary and leaves the visible register alone, and the plainest instance is
+the \textbf{swap} of $t$ and $v$ at $d = m$: it is a product at every input,
+its Kraus operators are $e_{i_0}e_i^{\top}$, and unsafe for every $m \ge
+2$, having moved the whole input into the register about to be discarded. So
+\emph{a product at every input} admits programs \cref{def:core} excludes, and
+the quantifier order---one $g$ for \emph{all} $v$---rules them out.
+
+\stmtGram
+
+The proof (Appendix~A.1) is short. Part (1) is the Knill--Laflamme
+condition~\cite{Knill1997Theory} with the whole visible register as the
+code, the $K_i$ as the errors and the temporary as the environment, which
+therefore learns nothing~\cite{Kretschmann2008Tradeoff}. Its second half is
+noninterference~\cite{Goguen1982Security,Ying2013Noninterference}, over $\C$
+only---a real rotation refutes it (Appendix~A.1)---and the impurity $\iota$ of
+\cref{sec:cost} is its quantitative degree. Part
+(2) reads Choi's rank~\cite{Choi1975CP} as a resource, the least width a
+temporary needs for the observed visible behaviour. Part (3) makes $\Gamma$
+a certificate: nothing the continuation does changes it.
+
+
+One lemma about that family is used twice below, once for the criterion of
+\cref{sec:criterion} and once for its reading as a channel, so it is stated
+here where the Kraus operators are introduced.
+
+\stmtProp
+
+The proof (Appendix~A.1) reads the hypothesis one matrix entry at a time, so
+it is worth writing the two sides out. Both are $m \times m$ and symmetric;
+at $m = 2$, abbreviating $u_i = K_i x$ and $z = Mx$, the hypothesis says
+\[
+  \sum_i
+  \begin{pmatrix}
+    {\color{accent}(u_i)_0^{2}} & (u_i)_0 (u_i)_1 \\
+    (u_i)_1 (u_i)_0 & {\color{accentwarm}(u_i)_1^{2}}
+  \end{pmatrix}
+  \;=\;
+  \begin{pmatrix}
+    {\color{accent}z_0^{2}} & z_0 z_1 \\
+    z_1 z_0 & {\color{accentwarm}z_1^{2}}
+  \end{pmatrix} .
+\]
+The coloured diagonal settles each row on its own. Where $z_b = 0$ a sum of
+squares is zero, so every $(u_i)_b$ vanishes with it; where $z_b \neq 0$ the
+ratios $(u_i)_b / z_b$ form a unit vector $c^{(b)}$ indexed by $i$. That is
+the sense in which each row of each $K_i$ is a multiple of the corresponding
+row of $M$. The uncoloured off-diagonal stops the multiples drifting from row
+to row: it reads $\langle c^{(0)}, c^{(1)}\rangle = 1$, and two unit vectors
+with inner product one are equal, so the rows share one $c$: the statement's
+$c_i$.
+
+\subsection{The constructs in existing systems}
+
+Every construct in the calculus is one that existing systems already have.
+$\texttt{new}$ is Silq's local quantum variable, Q\#'s \code{use}, and
+Quipper's \code{with\_ancilla}; Q\#'s \code{borrow} is the dirty variant,
+which carries no initialisation promise. $\drop$ is Silq's
+\code{forget}, the end of a Q\# \code{use} block, and the close of
+\code{with\_ancilla}. The side condition is Silq's \code{qfree} producer,
+checked by its type checker, Q\#'s requirement that a qubit be released in
+the state it was allocated in, checked at run time on simulators, and in Quipper the programmer's promise,
+checked by nothing. The $\lift(\meas)$ of \cref{sec:lifted} is Q\#'s \code{M}
+followed by classical control, and Quipper's dynamic lifting. The one mismatch
+runs the other way:
+Silq's \code{measure} consumes the register, where a lift leaves the temporary
+live and restricted to the surviving block.
+\Cref{sec:eval} says which of these are transcripts and which documentation.
+
+% Section 4 -- The criterion
+\section{The criterion}\label{sec:criterion}
+
+Both of the paper's negatives are stated against a positive, and this is
+it. For the measurement-free calculus we can say exactly when $\drop$ is
+safe, and say it not as ``the denotation factors''---\cref{def:core},
+quantified over matrices---but as a statement quantified over
+\emph{programs}.
+
+\begin{definition}[weakening witness]\label{def:sw}
+Write $\sep(R,W)$ for the term
+\[
+  \texttt{let } (t_1,v_1) = (R\otimes 1)(t,v) \texttt{ in }
+  \texttt{let } (t_2,v_2) = (1\otimes W)(t_1,v_1) \texttt{ in }
+  \drop\ t_2\,;\ v_2
+\]
+--- \emph{prepare the temporary once, compute on the visible register, drop}.
+A program $P$ is \emph{weakenable} when some \emph{typed} program of that
+shape, with the same allocation, has the same denotation.
+\end{definition}
+
+Two readings of that last sentence have to be kept apart, and the section's
+whole content sits in the gap between them.
+
+\begin{description}
+\item[\emph{being} $\sep(R,W)$] is a fact about the program \emph{text}: this
+  text has one gate on the temporary, then one on the visible register, and
+  nothing joint anywhere.
+\item[\emph{being weakenable}] is a fact about the \emph{denotation}:
+  somewhere in the calculus there is a text of that shape computing the same
+  function---whether or not our program looks remotely like it.
+\end{description}
+
+The second is by far the weaker demand, and Deutsch--Jozsa is the case to hold
+on to. Its text has the joint gate $U_f$ sitting in the middle of it and
+resembles $\sep(R,W)$ not at all; yet its denotation is $|{-}\rangle \otimes
+HD_fHv$ (\cref{sec:dj} works this out), and the separable program that
+prepares $|{-}\rangle$ and then applies $HD_fH$ has exactly that denotation.
+The algorithm is weakenable without being separable, and by
+\cref{thm:ctxequiv} no continuation will tell the two apart. Of the
+artifact's seventeen catalogue programs \textbf{two} are literally of the
+shape; \textbf{twelve} are safe and so, by the next theorem, have a witness
+they need not resemble. Appendix~B.1 of the supplement prints three of them
+beside their programs.
+
+\begin{theorem}[the criterion]\label{thm:criterion}
+A typed program is weakenable if and only if it is drop-safe.
+\end{theorem}
+\begin{proof}\leavevmode
+\begin{steps}
+\item ($\Rightarrow$) A witness $\sep(R,W)$ sends $e_{i_0} \otimes v \mapsto
+  Re_{i_0} \otimes v \mapsto Re_{i_0} \otimes Wv$, which is $g \otimes W$
+  with $g = Re_{i_0}$, and $\drop$ changes nothing.
+\item ($\Leftarrow$) Let $P$ be typed with denotation $Kv = g \otimes Wv$.
+  Since $K$ is an isometry, $\|g\|\,\|Wv\| = \|v\|$ for every $v$. Rescale
+  to $\|g\| = 1$, and $W$ is an isometry of $\R^{m}$, hence orthogonal,
+  hence a legal gate.
+\item It remains to prepare $g$ from $e_{i_0}$ by one gate. If $g = e_{i_0}$
+  take $R = I$. Otherwise put $w = e_{i_0} - g$ and let $R = I -
+  2ww^{\top}/\|w\|^{2}$, the reflection through the hyperplane $w^{\perp}$:
+  it is orthogonal, and since $\langle w, e_{i_0}\rangle = 1 - \langle g,
+  e_{i_0}\rangle = \tfrac12\|w\|^{2}$ it sends $e_{i_0}$ to $e_{i_0} - w =
+  g$. Then $\sep(R,W)$ is typed, has the same allocation, and denotes
+  $K$.\qedhere
+\end{steps}
+\end{proof}
+
+Step $\langle 3\rangle$ is the substance: every unit final state is
+preparable by one reflection or the identity, hence one \textsc{Gate}, so the certificate
+$(g,W)$ is realised by a program, the step a finite gate set threatens
+(\cref{sec:gateset}). Step $\langle 2\rangle$ is the whole contribution of
+the type system: its gates are unitary, so $K$ is an isometry. Without
+typing that must be assumed: for arbitrary linear gates, weakenability is
+drop safety together with $\|Kv\| = \|v\|$ for every $v$, and the clause
+cannot be dropped, since at $d = m = 1$ the map that doubles the visible
+register is drop-safe and not weakenable (Appendix~A.1). What is real-only
+here is the reflection witness; over $\C$ the factors are determined up to a
+compensating phase.
+
+\subsection{The criterion is contextual indistinguishability}
+
+\Cref{def:sw} compares a program with a witness at every input. That is
+not the same as comparing them in every \emph{context}. A
+\emph{continuation} appends one visible gate $C$ after the scope's last gate,
+drops the temporary, and reads the visible register in the standard basis.
+What it observes at input $x$ is the distribution $b \mapsto \sum_i \langle
+e_b, C K_i x\rangle^{2}$: the Born statistics of the visible register,
+temporary traced out. A class $F$ of visible gates \emph{distinguishes} two
+programs when some $C \in F$ and some input give different distributions, and
+a \emph{separable program} is a typed program of the shape $\sep(R,W)$.
+
+\begin{revisingblock}
+\stmtCtxEquiv
+\end{revisingblock}
+
+The proof (Appendix~A.1) reads the Born statistics after each reflection:
+agreement at every reflection says the symmetric matrices $\sum_i (K_i
+x)(K_i x)^{\top}$ and $(Wx)(Wx)^{\top}$ have the same quadratic form, so they
+coincide, and \cref{lem:prop} gives $K_i = c_i W$.
+
+Three remarks. A larger class distinguishes more, so the theorem holds
+for all visible gates and for continuations that also touch the temporary.
+The class cannot be $\{I\}$: the unsafe copy $t := t \oplus v$ has the same standard-basis statistics as doing nothing at every input, since $\sum_i \langle e_b, P_i x\rangle^{2} =
+x_b^{2}$ for its Kraus projectors $P_i$. The exact minimal class is open. And
+the theorem is about programs whose gates keep their register names, since the
+gate rule may rename its output binders.
+
+\subsection{Worked: Deutsch--Jozsa}\label{sec:dj}
+
+The criterion on the textbook's first algorithm, where it says what a producer-based check cannot:
+\begin{prog}
+let t = new |0> in t := X t; t := H t; & -- the ancilla is prepared in |->\\
+v := H v; v,t := Uf(v,t); v := H v; & -- phase kickback\\
+drop t; v & -- the drop under discussion
+\end{prog}
+Take $f : \{0,1\} \to \{0,1\}$, so that $U_f|j,t\rangle = |j, t \oplus
+f(j)\rangle$ and $D_f = \operatorname{diag}((-1)^{f(0)}, (-1)^{f(1)})$. At an \emph{arbitrary} input
+$\sum_j c_j|j\rangle$ to $U_f$---not only the intended one---the state after
+it is $\bigl(\sum_j (-1)^{f(j)} c_j |j\rangle\bigr) \otimes |{-}\rangle$.
+The temporary factor is $|{-}\rangle$ whatever the input, so the scope's
+denotation is $g \otimes Wv$ with $g = |{-}\rangle$ and $W = HD_fH$, which is
+$\pm I$ for constant $f$ and $\pm X$ for balanced $f$. By
+\cref{thm:criterion} the drop is safe, and by \cref{thm:ctxequiv} no
+continuation can distinguish this program from a separable one. It is
+program (a) with an algorithm attached, and every rule that reads the program
+text refuses it, for one of the two reasons of \cref{sec:overview}. The
+producer-based rules refuse it because $H$ is not \code{qfree}: Silq's
+automatic \code{forget} fails in our transcripts with \emph{cannot synthesize
+forget expression}, and Unqomp's synthesis is defeated by the same
+gate~\cite{Bichsel2020Silq,Paradis2021Unqomp}. The restore-based rules refuse
+it because $|{-}\rangle$ is not $|0\rangle$: Q\#'s release
+requirement~\cite{Svore2018Qsharp,MicrosoftQsharpMemory}, the promise
+Quipper's \code{with\_ancilla} closes on~\cite{Green2013Quipper}, Qutes'
+Reclamation~\cite[Def.~6]{Faro2026Qutes}, and the $\Pi$ family's fractional
+reuse rule~\cite{Chen2020Fractional}. None of these four turns on $f$: none of
+them looks at the oracle, and each refuses on the state the temporary is left
+on. \code{dqt pool} runs the last of them. The verification logics of
+\cref{sec:related} can admit the drop, but from a separability assertion the
+programmer supplies and proves, not from a check on the text.
+
+\subsection{What the pool receives, and the rule it already had}
+
+\begin{planned}{the certificate, and the rule the classical lineage already had}
+What the free pool receives when a drop is admitted, and what a record-indexed
+pool would have to receive once allocation may depend on an outcome; and how
+the $\Pi$ family's fractional reuse rule~\cite{Chen2020Fractional} reads
+against the criterion. Being written; nothing here is claimed.
+\end{planned}
+
+
+% Section 5 -- What restricting the gates costs
+\section{What restricting the gates costs}\label{sec:gateset}
+
+\Cref{thm:criterion}'s right-to-left direction used that \emph{every}
+unit state is preparable in one gate, because \cref{def:calculus} admits an
+arbitrary orthogonal $U$. A compiler emits words over a fixed finite
+repertoire, and there preparability is a real constraint: the biconditional
+can acquire a side condition. We state it at the \emph{ring} the
+repertoire's entries generate: every word over the repertoire is a gate over
+that ring, so an obstruction over the ring is one for the repertoire. The condition bites over some rings, and
+not over Clifford$+T$.
+
+Fix a \emph{gate ring} $\mathcal A$: a subring of $\C$ closed under
+conjugation, the ring the gate entries generate. A gate over
+$\mathcal A$ is an $\mathcal A$-valued unitary. Transport back to a
+concrete repertoire is not automatic: it needs exact synthesis
+\emph{within the witness's allocation budget}, and the multiqubit
+results permit a clean
+ancilla~\cite{Kliuchnikov2013ExactSynthesis,Giles2013ExactSynthesis,Amy2020Restricted},
+so we infer no finite-repertoire corollary. Say $\mathcal A$ is
+\emph{completable} in dimension $d$ when every unit vector in
+$\mathcal A^{d}$ is a column of a unitary over $\mathcal A$.
+Throughout this section the temporary has dimension $d \ge 2$ and is
+allocated at $|0\rangle$, the visible register is arbitrary, and
+scalars are complex. When a program $U$ is drop-safe its final state
+$g$ is determined up to phase, and the object of interest is the
+rank-one projector $gg^{\dagger}$, computed directly from the entries
+of $U$ without first finding $g$:
+\[
+  \mathrm{proj}(U)_{i\ell} \;=\; \sum_{{\color{accentplum}c}}
+     U_{({\color{accent}i},\,0),\,({\color{accentwarm}0},\,{\color{accentplum}c})}\;
+     \overline{U_{({\color{accent}\ell},\,0),\,({\color{accentwarm}0},\,{\color{accentplum}c})}} .
+\]
+Read the four slots of $U_{(i,b),(j,c)}$ as \emph{amplitude from temporary
+$j$, visible $c$, to temporary $i$, visible $b$}, and the colours say which is
+which. {\color{accentwarm}Warm} is the allocation: the input temporary is
+pinned to $0$, because that is where a program starts it.
+{\color{accentplum}Plum} is the visible index, and it is
+\emph{summed}---nothing here depends on which visible basis vector went in,
+which is why no clause about the visible register appears in the theorem
+below. {\color{accent}Blue} is what the pinnings keep: the picked cells, and the two
+output temporary levels $i$ and $\ell$, which are the free indices---the row
+and column of the $d \times d$ matrix being built. The output visible index is pinned to $0$ in both factors, and for a
+drop-safe $U$ any other choice gives the same matrix: the entries are then
+$U_{(i,b),(0,c)} = g_i W_{bc}$, so the sum is $g_i \overline{g_\ell}$ times the
+squared norm of one row of the isometry $W$, which is $1$.
+\Cref{fig:proj-index} is that formula drawn: the two pinnings are a block
+column and a row inside it, and what survives is a slab against its own
+conjugate.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics{figures/proj-index}
+\Description{A six by six matrix drawn as a three by three array of two by
+two blocks. The first block column is shaded, and the first row of each block
+in it is picked out. Those picked cells form a three by two slab, and the
+slab times its own conjugate transpose is a three by three matrix.}
+\caption{\textbf{Look at the block column}: the allocation pins the input
+temporary to $0$, and inside that column the output visible index is pinned to
+$0$ as well. What is left is a $d \times m$ slab, and $\mathrm{proj}(U)$ is
+that slab against its own conjugate with the visible index summed away. Drawn
+at $d = 3$, $m = 2$.}
+\label{fig:proj-index}
+\end{figure}
+
+Say $\mathcal A$ \emph{splits} a rank-one projection $P$ when $P =
+zz^{\dagger}$ for a vector $z$ over $\mathcal A$. The two halves of that
+sentence are different demands, and \cref{fig:splitting} keeps them apart:
+$P$ may have every entry in $\mathcal A$ while no vector over $\mathcal A$
+splits it, because the splitting vector's entries are square roots of $P$'s.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics{figures/splitting}
+\Description{On the left, a d by d grid of cells with a column vector to its
+left and a conjugated row vector above it, showing that entry i, l of the
+matrix is the i-th entry of the vector times the conjugate of its l-th. On the
+right, the projection onto plus, over two rings, with the splitting vector
+available in one and not the other.}
+\caption{\textbf{Look at the two rows on the right}: the projector is the
+same matrix in both, and only the ring changes. Splitting asks for a vector
+over the ring, which is strictly more than asking that the matrix's entries
+lie in it.}
+\label{fig:splitting}
+\end{figure}
+
+\stmtRelativised
+
+\Cref{fig:ring-repertoire} is this section in one path: repertoire to ring,
+ring to the splitting test, and the crossed way back.
+
+\begin{figure}[!ht]
+\centering
+\includegraphics{figures/ring-repertoire}
+\Description{A flowchart from a finite repertoire to its coefficient ring and
+then to a splitting test. Success yields a separable program; failure yields a
+program that is not weakenable. A crossed dashed arrow shows that
+ring-valued separation does not by itself synthesise a word over the finite
+repertoire.}
+\caption{\revisinginline{Which way section~\ref{sec:gateset} runs.
+\textbf{Look at the branch}: splitting is a side condition the ring does not
+supply, and \cref{thm:relativised} answers it both ways. \textbf{Then the
+dashed arrow}: the way back to words is exact synthesis, and not
+free---the case that fails is below the theorem.}}
+\label{fig:ring-repertoire}
+\end{figure}
+
+
+The proof (Appendix~A.2) reads $\mathrm{proj}(U) = gg^{\dagger}$ off a
+drop-safe $U$. A witness over $\mathcal A$ prepares $g$ by a gate over
+$\mathcal A$, so the projector splits, and conversely a splitting vector $z
+= \lambda g$ is completed to a gate by completability, while the visible
+factor is recovered over $\mathcal A$ by contracting $U$ against $\bar z$.
+
+Three things in the statement are not the expected shape. \emph{The
+projector is free}: $\mathrm{proj}(U)$ is a polynomial in the entries of $U$
+and their conjugates, so it lies over $\mathcal A$, and the side condition
+is a rank-one factorisation, not a matrix square root. \emph{No clause for
+the visible factor is needed}, and \emph{the visible register plays no
+role}, whatever its width. Every gate ring is completable at $d = 2$, and five rings are
+completable in every dimension, by the column lemmas of the exact-synthesis
+literature: $\mathcal R = \Z[1/\sqrt2, i]$, the ring of
+Clifford$+T$~\cite[Lemma~5]{Giles2013ExactSynthesis}, and $\Z[1/2]$,
+$\Z[1/\sqrt2]$, $\Z[i/\sqrt2]$ and $\Z[1/2, i]$, its integral, real,
+imaginary and Gaussian restrictions~\cite[Lemmas~5.4, 5.14, 5.19,
+5.25]{Amy2020Restricted}.
+
+\stmtCliffordT
+
+The ring $\mathcal R$ is exactly the one in which single-qubit
+Clifford$+T$ operators live~\cite{Kliuchnikov2013ExactSynthesis}: a $2 \times
+2$ unitary over $\mathcal R$ is an ancilla-free Clifford$+T$ word up to a
+global phase, and conversely. That reading needs the \emph{whole} unitary to be one qubit,
+temporary and visible together---not merely the visible factor---and a
+program with a temporary is already past it. Beyond it a gate over $\mathcal
+R$ is a macro-gate, and synthesising one in Clifford$+T$ can need a clean
+ancilla~\cite{Giles2013ExactSynthesis}, which a witness reusing the same
+allocation does not have. Controlled-$T$ is such a case: every ancilla-free
+two-qubit word in $H$, $T$ and CNOT has determinant a fourth root of unity,
+$\det$ controlled-$T = e^{i\pi/4}$, and the ring's scalars move a two-qubit
+determinant only by $\pm1$. The theorem is about the ring, and we do not
+claim it for a finite repertoire. Part (1) is proved in Appendix~A.2 from one
+classical fact, that $\Z[e^{i\pi/4}]$ has class
+number one~\cite[Ch.~11]{Washington1997Cyclotomic}: a nonzero column of the
+projection, divided by the greatest common divisor of its entries, has for
+its squared norm a unit of $\Z[1/\sqrt2]$ that is a sum of norms, hence
+totally positive, hence $|\varepsilon|^{2}$ for a unit $\varepsilon$ of
+$\mathcal R$, and that column divided by $\varepsilon$ is $z$. Part (2) is
+part (1) inside \cref{thm:relativised}, the column lemma supplying
+completability.
+
+One ring below, the side condition is real. Over $\Z[1/\sqrt2]$---the ring of
+the real Clifford$+T$ gates---the projector of the $H$-type magic state
+$\cos\tfrac\pi8|0\rangle + \sin\tfrac\pi8|1\rangle$ has entries in the ring
+and does not split, while over $\mathcal R$ it does; and a single gate
+$\mathit{rot} \otimes \mathit{rot}$, for $\mathit{rot}$ the rotation of a
+qubit by $\pi/8$, realises the separation as a program, drop-safe with that
+magic state as its final state and weakenable over $\mathcal R$ but not over
+$\Z[1/\sqrt2]$. Appendix~A.2 computes both. What changed is not the final
+state but the ring available to name it.
+
+\stmtRings
+
+The proof (Appendix~A.2) is \cref{thm:cliffordT}'s argument again: the two complex rings are principal ideal domains
+whose totally positive real units are norms of units, while over a real
+ring a splitting vector can only be $\pm g$. Of the five rings named here,
+the three complex ones split every projection and the two real ones each
+refuse a named projection.
+
+\subsection{What deciding costs}\label{sec:cost}
+The criterion of \cref{def:core} is a finite computation on the denotation,
+and the denotation is exponentially large in the width. This subsection prices
+it. Scalars are complex here, so $\Gamma_{ij} = \operatorname{tr}(K_i^{\dagger}
+K_j)$. Three definitions are needed first, and they are the only ones.
+
+\begin{description}
+\item[the input, a \emph{circuit program}] has qubit registers, so $d = 2^{k}$
+  and $m = 2^{n}$, with the temporary allocated at $|0^{k}\rangle$ and gates on
+  at most three qubits each. A gate is given by its matrix, each entry an
+  algebraic number presented exactly---its minimal polynomial, and an isolating
+  rectangle in binary. The program's \emph{size} counts the gates, the qubits
+  and that presentation.
+\item[the leak, $\iota(K)$] is measured on the temporary. Feed the visible
+  register an input $\psi$, possibly entangled with a reference register, and
+  let $\rho_t(\psi)$ be the temporary's state after the run. Its
+  \emph{impurity} $1 - \operatorname{tr}\rho_t(\psi)^{2}$ vanishes exactly
+  when that state is pure, and $\iota(K) = \sup_\psi\bigl(1 -
+  \operatorname{tr}\rho_t(\psi)^{2}\bigr)$ is the worst case over inputs.
+\item[the leak at one input, $\bar\iota(K)$] is the same number read at a
+  single $\psi$, one whose visible marginal is maximally mixed. That is well
+  defined because $\rho_t(\psi)$ depends on the visible marginal alone, and it
+  is what makes the quantity computable rather than a supremum.
+\end{description}
+
+At an input whose visible marginal is maximally mixed---the one $\bar\iota$
+is measured at---the temporary is in the state $\Gamma^{\top}/m$, by the
+entrywise identity $\operatorname{Tr}_v[KK^{\dagger}] = \Gamma^{\top}$
+(Appendix~A.5); so $\bar\iota(K) = 1 - \operatorname{tr}(\Gamma^{2})/m^{2}$,
+and the drop is safe exactly when $\bar\iota(K) = 0$, exactly when $\iota(K)
+= 0$. That is form (4) read physically, and it is what the promise below is
+stated on.
+
+\stmtClassicalCost
+
+Membership is two basis inputs that land the temporary in different
+basis states. Hardness is Bennett's compute--copy--uncompute~\cite{Bennett1973Logical}
+with the target counted into the temporary: a program that evaluates a
+Boolean circuit $B$, copies $B(x)$ into a target and uncomputes its scratch
+drops the two together safely exactly when $B$ is constant. Constancy is not
+unsatisfiability, so the reduction emits a fixed unsafe program when
+$B(0^{n}) = 1$; what it emits is drop-safe exactly when $B$ is unsatisfiable. Liu et al.\ show the same bound for a
+different predicate, whether some unitary can restore the
+ancilla~\cite{Liu2026Uncomputation}, and that program is restorable for every
+$B$ (Appendix~A.5).
+
+\begin{revisingblock}
+\stmtAverageCost
+
+The algorithm: run the program twice on independent uniformly random
+basis inputs and swap-test the two temporaries, which accepts
+with probability $1 - \bar\iota(K)/2$~\cite{Buhrman2001Fingerprinting}. The two readings of the leak differ.
+For $m \ge 2$ Grover's reflection~\cite{Grover1996Search} $U = I -
+2|w\rangle\langle w|$ has nonzero $+1$ and $-1$ eigenspaces, and the program that puts
+the temporary in $|{+}\rangle$, applies $U$ controlled by it and drops it has
+$\iota = \tfrac12$, the most a qubit can carry, but
+$\operatorname{tr}(U)/m = 1 - 2/m$, so $\bar\iota = 2/m - 2/m^{2}$,
+and the swap test needs order $m$ repetitions to see it,
+exponentially many in the width. Without a promise gap the verdict is
+coNP-hard over any gate set containing $X$, CNOT and Toffoli, and lies in
+PSPACE when the gate entries come from a fixed number field
+(Appendix~A.5).
+\end{revisingblock}
+
+\begin{planned}{the price on a restricted gate set}
+On which gate sets is the verdict cheap, and what does a gate one step outside
+such a set cost? Being written; nothing here is claimed.
+\end{planned}
+
+
+% Section 6 -- Measurement, and the lifted calculus
+\section{Measurement, and the lifted calculus}\label{sec:lifted}
+
+Program (c) needs a language in which a measured outcome becomes a
+classical parameter. That is a second language, and from here the two are
+kept apart by name: a \emph{program} is a typed term of \cref{def:calculus},
+which is what every section up to here was about, and a \emph{command} is a
+typed $c$ of the calculus just below---which is what (c) becomes on that
+reading. The rest of
+the paper is about commands.
+
+The second calculus is two-sorted, in the style of Proto-Quipper's
+\emph{dynamic lifting}~\cite{Fu2023DynamicLifting}---the Quipper term for
+reading a measurement outcome into classical control:
+\[
+\begin{aligned}
+  c ::={}& \texttt{halt} \mid \texttt{gate}\ U\,;c \mid \texttt{vgate}\ V\,;c
+         \mid \drop\ t\,;c \\
+      \mid{}& \texttt{let } p = \lift(\meas\ t \in S)\texttt{ in } c
+         \mid \texttt{if } e \texttt{ then } c_1 \texttt{ else } c_2
+\end{aligned}
+\]
+with two contexts: parameters are classical, duplicable and weakenable, and the
+quantum state is affine, forgettable only by $\drop$, after which nothing
+may name it. There is no allocation form, and none is missing: a command is
+typed at a flag that starts the temporary live, and the machine starts it at
+$e_{i_0}$, so the allocation sits in the judgement rather than in the syntax.
+
+That is what $\allocFree$ does for \cref{def:calculus}, said the other way
+round---one temporary, allocated once, before anything runs. One rule
+connects the two sorts: a lift on a live temporary
+measures whether it lies in the block $S$, keeps the surviving branch without
+renormalising, and binds the answer as a parameter the continuation may test.
+The \emph{measurement record}, the word of the quantum-trajectory literature~\cite{Wiseman2010Measurement}, is the sequence of which outcome survived at each
+$\lift$, supplied from outside the program. Branch
+nondeterminism is recovered by quantifying over records.
+
+What a command \emph{does} still has to be said, and the lift is the reason to
+say it with a machine rather than a function. A lift has two futures
+and the text does not choose between them; only the record does. So the
+machine is handed its record from outside, as a tape it consumes one entry per
+lift; everything else is then determined. A
+\emph{configuration} $\langle c;\psi;\eta;\sigma\rangle$ carries the command
+still to run, the joint state $\psi$, the store $\eta$ of parameters bound so
+far, and the record's unread suffix $\sigma$.
+
+Two abbreviations make the lift rule readable. A lift on the block $S$ keeps
+either the part of the temporary inside $S$ or the part outside it, so write
+\[
+  P_{\mathsf{in}} = P_S, \qquad P_{\mathsf{out}} = I - P_S,
+  \qquad \beta(\mathsf{in}) = 1, \qquad \beta(\mathsf{out}) = 0
+\]
+for those two projections and for the boolean each of them reports back to the
+program. Three reductions then carry the weight; a visible gate and a
+conditional do the obvious thing, and Appendix~A.1 has them.
+\[
+\begin{aligned}
+ \langle \texttt{gate}\ U\,;c;\psi;\eta;\sigma\rangle
+ &\longrightarrow
+ \langle c;U\psi;\eta;\sigma\rangle,\\
+ \langle \drop\ t;c;\psi;\eta;\sigma\rangle
+ &\longrightarrow
+ \langle c;\psi;\eta;\sigma\rangle,\\
+ \langle \texttt{let }p=\lift(\meas\ t\in S)\texttt{ in }c;
+          \psi;\eta;b\cdot\sigma\rangle
+ &\longrightarrow
+ \langle c;(P_b\otimes I)\psi;\eta[p\mapsto\beta(b)];\sigma\rangle.
+\end{aligned}
+\]
+Read them in order. A gate applies its matrix and moves nothing else.
+A drop applies \emph{nothing}, which is exactly the point: the temporary is
+still sitting in $\psi$, and all that has happened is that the typing has
+stopped anyone naming it. A lift takes the next entry $b$ off the record,
+projects the temporary onto that half of the block, does \emph{not}
+renormalise---so the weight the branch keeps is carried rather than thrown
+away---and binds $\beta(b)$ into the store for a later conditional to test.
+
+Because the record was fixed before the run, all of this multiplies out into
+one matrix. Write $E_o(c)$, the \emph{selected denotation} of $c$ along $o$,
+for the composite of the gates and block projections the run performs, read
+off $c$ by a recursion that Appendix~A.1 gives together with the typing rules
+and the remaining reductions; \cref{thm:meta}, just below, is the statement
+that this matrix and the machine agree. A record is \emph{reachable} for $c$
+when $E_o(c) \ne 0$. The drop is \emph{safe under $o$} when $E_o(c)$ is drop-safe, so an
+unreachable record is safe. The \emph{weight} of the run at a unit input
+$v$ is $\|E_o(c)v\|^{2}$.
+
+\stmtMeta
+
+The proof, a pair of inductions over commands, is in Appendix~A.1. What the
+theorem buys is that every later statement about a command is a statement
+about the single linear map $E_o(c)$---and that map is of the kind
+\cref{def:core} is about. The machine starts at $e_{i_0} \otimes v$, so
+$E_o(c)(v) = E_{o,\emptyset}(c)(e_{i_0}\otimes v)$: an operator on
+$\R^{d}\otimes\R^{m}$ precomposed with the allocation isometry, hence a map
+$\R^{m} \to \R^{d}\otimes\R^{m}$, which is the type of $K$. Kraus operators,
+drop safety and the Gram matrix are therefore read off $E_o(c)$ exactly as
+off a program's $K$, one record at a time. Only the normalisation moves: a
+program's $K$ is an isometry, so $\operatorname{tr}\Gamma = m$, while
+$E_o(c)$ carries the record's block projections and
+$\operatorname{tr}\Gamma$ is instead the weight that record keeps, summed
+over the visible basis. \Cref{thm:bridge} is that bookkeeping.
+
+The two calculi meet at their denotations, not at their grammars. A typed
+program has no lift, and the gate list its elaboration produces \emph{is} a
+lift-free command with the same denotation; the lift-free commands are
+slightly the larger class, since one may apply a visible gate after the drop
+and no program can write that. So measurement does not break the matrix
+picture. It indexes it.
+
+\subsection{The same verdict, as a channel}\label{sec:channel}
+
+\Cref{thm:meta} paves the way for reasoning with channels: along a record a
+command is one linear map $E_o(c)$, so the verdict can be stated on the
+channel that map induces. Fix a measurement record $o$, write $V_o = E_o(c)$,
+and build the discard channel of \cref{sec:calculus} from $V_o$ instead of
+from a program's $K$: $\Phi_o(\rho) = \sum_i K_i \rho K_i^{\top}$ with $K_i$
+the Kraus operators of $V_o$. Because $V_o$ carries the block projections of the record
+it is not an isometry, so $\Phi_o$ is trace-\emph{non}increasing rather than
+trace-preserving---a \emph{subchannel}, whose surviving trace is the weight
+of the branch. The channel is $\sum_o \Phi_o$; the subscript is load-bearing, because
+without it there is no single branch to speak of. The proportionality
+lemma of \cref{sec:calculus} now does its second job.
+
+
+\begin{theorem}[drop safety is Kraus rank one]\label{thm:bridge}
+Fix a measurement record $o$. The drop is safe under $o$ if and only if the
+subchannel $\Phi_o$ has a representation with a single Kraus operator. At a unit input $v$ the
+weight of the run is $\operatorname{tr} \Phi_o(v v^{\top})$.
+\end{theorem}
+\begin{proof}
+$\operatorname{tr} \Phi_o(vv^{\top}) = \sum_i \|K_i v\|^{2} = \|V_o v\|^{2}$
+is the weight. If the drop is safe, $K_i = c_i W$ and the sum collapses to
+$\Phi_o(\rho) = (cW) \rho (cW)^{\top}$ with $c^{2} = \sum_i c_i^{2}$. Conversely, if
+$\Phi_o(\rho) = M \rho M^{\top}$ for every $\rho$, then at $\rho = xx^{\top}$ the
+hypothesis of \cref{lem:prop} holds, so $K_i = c_i M$ and $V_o = (c_i)_i
+\otimes M$ is drop-safe. Nothing assumed $V_o$ isometric, and the zero map has the
+single Kraus operator $0$, so an unreachable record is safe here too.
+\end{proof}
+
+One caution, and it is why the paper is indexed by measurement records
+rather than by channels. Two well-typed commands on a temporary qubit and a
+visible qubit can have the same summed channel $\Phi_0 + \Phi_1$ and the
+same weight on every branch at every input, with opposite verdicts on every
+branch: $H$ then $\mathrm{CZ}$ then a lift, against a lift then a controlled
+write, both summing to the dephasing channel (Appendix~A.1). So an analysis
+that reads the channel a program implements, or samples its statistics,
+cannot decide the drop. One that reads the program can, and its instance is
+the calculus above.
+
+
+% Section 7 -- The boundary of one verdict per command
+\section{The boundary of one verdict per command}\label{sec:boundary}
+
+\begin{planned}{the boundary, and where it starts}
+What a verdict that does not read the measurement record must give up, and
+where that boundary starts. Not an undecidability result: safety under every
+reachable record is decided by running \cref{thm:criterion}'s rank test once
+per record. Being written; nothing here is claimed.
+\end{planned}
+
+
+% Section 8 -- The repair: a check the run can answer
+\section{The repair: a check the run can answer}\label{sec:residual}
+
+\begin{planned}{the runtime check, and a run of consecutive lifts}
+What a compiler can emit when no verdict fixed before the run will do: a table
+with one row per measurement record, computed before the run and looked up
+after it, which \cref{fig:two-lane} draws. The rule at one lift, the two
+hypotheses it needs, and the closed form for a run of consecutive lifts are
+being written; nothing here is claimed.
+\end{planned}
+
+\begin{figure}
+\centering
+\includegraphics{figures/two-lane}
+\Description{A two-lane compiler workflow. Before execution the compiler cuts
+the program at its lifts, checks the prefix, and emits one proportionality
+test per measurement record. When an outcome arrives, execution selects that
+record's row and admits or refuses the drop.}
+\caption{\revisinginline{The two lanes of \cref{sec:residual}. \textbf{Look at the arrow
+between them}: what the compiler emits is a \emph{table}, one row per
+measurement record, not a verdict. The left lane is the work
+\cref{sec:boundary} leaves open before the run, and it abstains rather than guessing
+when the prefix does not leave the temporary constant with a right-invertible
+visible action. The right lane needs the run, and it is a lookup.}}
+\label{fig:two-lane}
+\end{figure}
+
+
+% Section 9 -- Several temporaries, and lifetimes
+\section{Several temporaries, and lifetimes}\label{sec:many}
+
+\begin{planned}{composition, lifetimes, summaries, and borrows}
+The criterion is stated for one temporary. What a summary must retain when a
+program allocates several---composed into one, tracked a lifetime at a time as
+a Rust-style region discipline would~\cite{KlabnikNichols2023Rust}, or crossed
+by a procedure boundary---is being written; \cref{sec:eval}'s borrowed-ancilla
+row reports only what the checker printed.
+\end{planned}
+
+
+% Section 10 -- Implementation and evaluation
+\section{Implementation and evaluation}
+\label{sec:eval}
+
+\revising{The preceding sections prove; this one runs what they define. The artifact is one Haskell package with two implementations of one question. \code{DQT} builds the denotation $K$ as a matrix, forms the Kraus
+operators, and takes the exact rank of their $d \times m^{2}$ reshaping
+(\cref{def:core}), a cost exponential in the width.
+\code{S}, the surface language of the corpus, never builds $K$: it runs the
+program on $\dim+1$ test inputs, the visible basis plus all-ones, factors
+the state at the drop site, and asks whether the resulting lines agree. A
+bridge module compares the two, and \textbf{they agree on every catalogue
+verdict}; each engine's runtime check is pinned against its own criterion.
+They share no code but one exact cyclotomic backend, so the comparison varies
+the algorithm and holds the arithmetic fixed. A companion Lean
+library over Mathlib mechanises \cref{thm:criterion} from the calculus's
+syntax and typing rules, and proves the Gram identity, the temporary's state
+at the maximally mixed visible input, that local gates compose and carry a
+product input to a product output, and, in abstract form, the constancy
+lemma that \cref{sec:boundary} will state. The Haskell suite runs
+\revisinginline{58} named statements in the theory layer and 244
+checks in the language layer over seven of the table's eight algorithms and
+three more (Shor's order finding, Simon's problem, a temporary \textsc{and}
+uncomputed by measurement), the $C^{3}X$ borrow being pinned by three checks on its source files.}
+
+\subsection{The catalogue: a producer rule against the criterion}
+
+\revising{Seventeen small programs, each built to make one point and listed in the
+supplement, Appendix~B, run against two
+rules. \textbf{R1} accepts a drop when every gate is a permutation, the
+gate-level reading of ``creates no superposition''. \textbf{R2} adds ``and no
+gate writes visible data into the temporary'', the shape of Silq's producer
+rule. The criterion accepts \textbf{twelve} of the seventeen. R1 accepts
+four, one wrongly: \code{compute-alone} creates no superposition and still
+leaks, because it writes visible data into the temporary. R2 is sound and accepts \textbf{two} of the twelve. Deutsch--Jozsa, Bernstein--Vazirani, Grover's oracle and the two-gate program of \cref{sec:intro} are safe and refused by it.}
+
+\subsection{Eight textbook algorithms}
+
+\begin{revisingblock}
+We write eight textbook algorithms in \code{S}, compute the verdict at
+every $\drop$, and run the runtime check and Silq on each row's smallest
+faithful program. Two rows leave the calculus: $C^{3}X$ takes its temporary on
+a state it did not prepare, and superdense coding lifts a \emph{visible}
+register while the temporary is live. Their verdicts are the checker's,
+computed on the same denotation by the same test, and no theorem here covers
+them. The Silq column is transcripts against two source builds, \code{a47d974}
+and \code{5417dce}; \code{code/silq/TRANSCRIPT.md} says which run used which,
+and marks the one attribution it had to infer. The Q\# column is its release
+requirement, unenforced on hardware.
+\begingroup\centering
+\footnotesize
+% Narrow columns: ragged right and no hyphenation, so no cell stretches its
+% words across the column and no word breaks in half.
+\hyphenpenalty=10000 \exhyphenpenalty=10000 \rightskip=0pt plus 1fil
+\begin{tabular}{@{}L{.22\linewidth}L{.28\linewidth}L{.20\linewidth}L{.22\linewidth}@{}}
+\toprule
+algorithm & this theory says & Silq, run & Q\# release \\
+\midrule
+Deutsch--Jozsa & safe, left in $[|{-}\rangle]$ (\cref{sec:dj})
+  & \emph{cannot synthesize forget} & fails at $|{-}\rangle$ \\
+Bernstein--Vazirani & safe, $W = X^{s}$
+  & the same error & fails at $|{-}\rangle$ \\
+Grover oracle, compute--uncompute & safe, left in $[|0\rangle]$
+  & accepts, runs & passes \\
+$C^3X$, borrowed dirty ancilla & safe on the two loans run, left on the loan's own ray
+  & expressible, unchecked & promise, unchecked \\
+Phase estimation & safe, left on the eigenstate line
+  & the same error & fails at $|u\rangle$ \\
+Superdense coding & safe under every record
+  & accepts, no drop & passes \\
+Teleportation & both drops safe, every record, for the message $|{+}\rangle$
+  & accepts, runs & runtime only \\
+Repeat-until-success round & \emph{outcome-dependent}, the runtime check
+  decides both & accepts, then \emph{bad forget} on $6/20$ seeds & no single
+  release ray \\
+\bottomrule
+\end{tabular}
+\par\endgroup
+
+\emph{The disagreements never go the dangerous way, but ``no
+disagreement'' is often ``no ruling''.} In these eight rows Silq never accepts an
+automatic $\drop$ that this theory refuses, and it refuses three safe ones;
+only the Grover row is positive agreement, since superdense coding's encoding has no \code{forget},
+the borrowed ancilla is unchecked, and teleportation's survivor is the
+receiver's register. Containing a measurement is not the problem:
+superdense coding and teleportation lift outcomes and are not
+outcome-dependent. On the last row Silq accepts a hand-supplied
+value witness and then fails at run time, \emph{bad forget}, on $6$ of $20$
+seeds. That refutes the one value we supplied, and we searched for no other;
+that no fixed value can serve at all is what \cref{sec:boundary} will show.
+Phase estimation is complex, so its verdict is taken up to phase, on the ray
+the temporary is left on rather than on a real vector.
+These rows measure agreement and coverage, not scale: both procedures are
+exponential in register width.
+
+The $C^3X$ row is a program we did not write: Gidney's four-Toffoli
+3-controlled $X$ with one \emph{dirty} ancilla, the first case study of Su et al.'s heap logic~\cite{Su2024Heap}. In the surface language:
+\begin{prog}[l@{\hspace{1.4em}}l]
+vis q1:2, q2:2, q3:2, q:2; newdirty a:2 @ (1,0); & -- the loan: a arrives on |0>\\
+gate CCX q3 a q; gate CCX q1 q2 a;                & -- two Toffolis\\
+gate CCX q3 a q; gate CCX q1 q2 a; drop a;        & -- again, then return the loan
+\end{prog}
+Our checker admits the drop, printing the loan's own ray $(1,0)$ and, with
+the loan $|{+}\rangle$, that loan's ray. What it does not do is certify the
+borrow for \emph{every} lent state: that needs a finite test set, and this
+document does not state one.
+\end{revisingblock}
+
+% Section 11 -- Related work
+\section{Related work}\label{sec:related}
+
+\begin{revisingblock}
+\emph{Affine typing and circuit languages.} Selinger and Valiron make
+quantum data affine, so discard is a typing restriction rather than a
+question~\cite{SelingerValiron2006}, and QWIRE supplies the circuit/host
+split~\cite{Paykin2017QWIRE}. Twist and Guppy address the neighbouring
+obligation that a value be unentangled from what it does not
+own~\cite{Yuan2022Twist,Koch2025Guppy,Koch2025Ownership}. Twist comes
+closest: its Corollary~6.2 is a semantic \emph{iff} for purity, weakened in
+\S7.6 to a sufficient condition once assertions are added, and its checker
+runs a static-plus-runtime split, but it has no completeness theorem and
+no proof that the retreat is forced (\cref{thm:criterion} and \cref{sec:boundary}).
+
+\emph{Automatic uncomputation.} Silq~\cite{Bichsel2020Silq} and
+Unqomp~\cite{Paradis2021Unqomp} ask how a value was produced
+(\cref{sec:intro}). Cavy~\cite{McNally2021Cavy} and
+Qurts~\cite{Hirata2025Qurts} track ancilla lifetimes; Cavy states the
+obligation semantically---a short-lived ancilla returns
+\emph{unentangled}---and pursues it by lifetime-directed uncomputation, its
+correctness proof left open.
+Qunity~\cite{Voichick2023Qunity}, Reqomp~\cite{Paradis2024Reqomp} and
+modular synthesis~\cite{Venev2024Modular} work under error,
+space or purity restrictions. ReQWIRE frames the gap: a semantic
+characterisation of ancilla validity, then syntactic conditions it calls
+sufficient but not necessary~\cite{Rand2019ReQWIRE}.
+
+\emph{The nearest neighbour.} Qutes gives scope-bounded,
+liveness-guided uncomputation a semantic account---semantic lifetimes, a
+Restoration Invariant, nested scopes---and its boundary is exact where it applies: for a
+temporary entangled with a variable that stays live across the boundary,
+restoration is possible \emph{if and only if} the subcomputation is
+\emph{output-isolable} with respect to that variable, decomposing as $U_L
+\circ V_T$ with $V_T$ acting on the temporary
+alone~\cite[Def.~5, Lem.~11]{Faro2026Qutes}; a
+companion HPDC paper studies the structural parallelism such closed regions
+create~\cite{Faro2026Parallelism}. Read literally, Definition~5 puts the two
+factors on disjoint registers, so the subcomputation denotes a temporary
+factor tensored with a visible one---both gates \emph{local} in the sense of
+\cref{sec:calculus}---and that is strictly stronger than drop safety; their worked example
+inserts the temporary's own history, reading a live input variable, so we do
+not read it as a comparison of strength. Reclamation returns the temporary to
+its \emph{initial} state~\cite[Def.~6]{Faro2026Qutes}, and our question is the
+other one: may a temporary be dropped \emph{without} restoration?
+Deutsch--Jozsa's ancilla ends on $|{-}\rangle$, not where it was allocated,
+while \cref{thm:criterion} asks only that it end \emph{somewhere} fixed. Where
+a measurement outcome influences what follows their invariant cannot hold past
+that point~\cite[Lem.~9]{Faro2026Qutes}; that is \cref{sec:boundary}'s regime,
+where the verdict is indexed by the record rather than refused.
+
+\emph{Verification logics.} Q* makes separability an assertion
+justifying discard~\cite{Hietala2022Qstar}; Tsai et al.\ compile such
+assertions to automata~\cite{Tsai2026Specification}. Su et al.'s quantum BI
+logic is sound and relatively complete for dirty-allocation
+heaps~\cite{Su2024Heap}. Hoare Meets Heisenberg certifies disposal for a
+stabilizer fragment~\cite{Sundaram2026Hoare}. None contradicts
+\cref{sec:boundary}: each verifies a given postcondition, our static ceiling;
+the impossible boolean is the run-sensitive one, its sound side Chen et
+al.'s dead-measurement analysis~\cite{Chen2026DeadMeasurement}.
+
+\emph{Exact conditions at circuit level.} Li et al.\ verify that a
+circuit restores its clean or dirty ancillas, by commutation checks on decision diagrams and model counting, and repair faults~\cite{Li2026AncillaSafety}. Liu et al.\ show that deciding whether an uncomputation exists is coNP-complete for reversible Boolean circuits over $\{\mathrm{CCNOT}, X\}$, and coNP-hard wherever those two are polynomial-size constructible~\cite{Liu2026Uncomputation}. Su et al.\ give finite tests for the
+identity-on-the-borrowed-qubit condition, two states for classical
+circuits~\cite{Su2025Borrowing}, and Bona assumes safe dirty-ancilla
+blocks---identity on the borrowed qubit---and schedules semantics-preserving
+borrow substitutions~\cite{Xu2026Bona}. All four work on fixed unitary
+circuits. A drop asks whether restoration is needed at all, strictly between
+restoration and restorability (\cref{sec:intro}) and, with measurement,
+dependent on the record (\cref{sec:boundary}).
+\Cref{sec:cost} prices the verdict
+itself~\cite{Bennett1973Logical,Tanaka2009ExactNonIdentity}.
+
+\emph{The reversible lineage.} In the $\Pi$ family a fractional-type
+token reclaims allocated storage~\cite{Chen2020Fractional}, and
+de-allocation is a runtime value match~\cite{Chen2021Algebraic}. QuantumPi adds quantum ancillas, hiding and
+measurement~\cite{Carette2024QuantumEffect}, but no outcome-indexed
+certificate. Our calculus is not $\Pi$: on outcome-dependent commands the
+runtime position is forced, and the fractional reuse rule is sound and
+strictly weaker (\cref{sec:criterion}). The spooky pebble
+game~\cite{Kornerup2025Spooky} measures rather than restores the ancilla,
+and its uncomputed ancilla is drop safety at $g = |0\rangle$---restoration
+again---with the phase left as the continuation's obligation.
+\end{revisingblock}
+
+
+% Section 12 -- Conclusion, scope, and what is open
+\section{Conclusion, scope, and what is open}\label{sec:conclusion}
+
+\revising{A quantum temporary may be dropped when the rest of the program cannot
+tell. For a measurement-free typed program three conditions
+coincide---weakenable, drop-safe, contextually indistinguishable from a
+separable program---and the test is proportionality of the Kraus operators: Kraus rank
+one, equivalently a pure temporary at the maximally mixed visible input. Over a gate ring completable in the temporary's dimension it
+acquires one side condition, supplied by the Clifford$+T$ ring and its two
+complex restrictions and not by its two real ones. Once a command lifts an outcome
+the condition survives and the \emph{verdict} does not: one
+boolean fixed before the run cannot be right on both records, so a sound one
+must refuse a safe run, on exactly the outcome-dependent commands. The missing
+argument is the measurement record, so the verdict must become record-aware;
+ours is a table the compiler emits, one row per record. Every verdict here is
+defined exactly from a selected denotation and computed in exact arithmetic;
+\cref{prop:avgcost} alone is a bounded-error promise test. Open: a gate ring
+with no column lemma, the positive side of the per-lifetime obstruction, and
+whether the runtime check of \cref{sec:residual} is exactly some set of
+typing rules. Five boxes marked \emph{Planned} name the
+results this draft does not yet carry, each being written.}
+
+
+% ---------------------------------------------------------------------------
+% The bibliography is outside the 25 pages.
+% ---------------------------------------------------------------------------
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{refs}
+
+% No appendix here: appendices are supplemental material, not part of the
+% main PDF. They are in supplement.tex, which `make` builds as its own
+% document.
+
+\end{document}

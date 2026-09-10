@@ -1,0 +1,59 @@
+% The two lanes of section 7: what the compiler can do before the run, and
+% what only the run can answer. The paper's measurement contribution is the
+% arrow between them -- the compiler emits a TABLE, not a verdict -- and that
+% is the thing to look at.
+%
+% Colour is not load-bearing: the two lanes are told apart by position and by
+% their dashed enclosures, and the handoff arrow is the one accent.
+%
+% WIDTH. \textwidth is 395.8pt; keep this under ~385pt.
+%
+%   make figures                              compiles it
+%   \includegraphics{figures/two-lane}        includes it
+\documentclass[tikz,border=3pt]{standalone}
+\input{house}
+
+\begin{document}
+\begin{tikzpicture}[house, node distance=5.5mm and 10mm]
+
+  % ---- left lane: before the run --------------------------------------
+  \node[box, text width=42mm, inner ysep=4.5pt] (cut)
+    {cut the run at its lifts};
+  \node[box, below=of cut, text width=42mm, inner ysep=4.5pt] (const)
+    {prefix leaves $t$ constant,\\visible action right-invertible?\\[1pt]
+     \footnotesize (otherwise abstain)};
+  \node[box, below=of const, text width=42mm, inner ysep=4.5pt] (test)
+    {one proportionality test\\per record, at most $2^{\ell}$};
+
+  \draw[flow] (cut) -- (const);
+  \draw[flow] (const) -- node[lbldim, right, font=\scriptsize] {yes} (test);
+
+  % ---- right lane: when the outcome arrives ---------------------------
+  \node[box, right=38mm of cut, text width=36mm, inner ysep=4.5pt] (rec)
+    {the record $o$ arrives};
+  \node[boxhi, below=of rec, text width=36mm, inner ysep=4.5pt] (look)
+    {look up the row for $o$};
+  \node[box, below=of look, text width=36mm, inner ysep=4.5pt] (verdict)
+    {\textsc{admit} \quad or \quad \textsc{refuse}};
+
+  \draw[flow] (rec) -- (look);
+  \draw[flow] (look) -- (verdict);
+
+  % ---- the handoff: a table, not a verdict ----------------------------
+  \draw[->, draw=accent, line width=0.9pt]
+    (test.east) -- ++(10mm,0) coordinate (bend) |- (look.west);
+  % Centred on the horizontal run it names, clear of the lane boundary.
+  \node[font=\footnotesize, text=accent, align=center, inner sep=1pt,
+        anchor=south]
+    at ($(bend |- look.west)!0.5!(look.west) + (0,1.4mm)$)
+    {a \textbf{table},\\one row per record};
+
+  \begin{scope}[on background layer]
+    \node[group, fit=(cut)(test),
+          label={[lbldim, font=\footnotesize\itshape]above:before the run}] {};
+    \node[group, fit=(rec)(verdict),
+          label={[lbldim, font=\footnotesize\itshape]above:when the outcome arrives}] {};
+  \end{scope}
+
+\end{tikzpicture}
+\end{document}

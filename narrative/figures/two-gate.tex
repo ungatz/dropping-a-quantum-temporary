@@ -1,0 +1,17 @@
+% The two-gate circuit of the introduction: allocate, H, H, forget. The
+% register is |0> again, and a producer-based rule still refuses the forget.
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+
+\begin{document}
+\begin{tikzpicture}[house, x=1cm, y=1cm]
+  \node[left, font=\small] at (0,0) {$|0\rangle$};
+  \draw[ink] (0,0) -- (1.0,0);
+  \node[box, fill=white, minimum size=6mm] (h1) at (1.4,0) {$H$};
+  \draw[ink] (1.8,0) -- (2.5,0);
+  \node[box, fill=white, minimum size=6mm] (h2) at (2.9,0) {$H$};
+  \draw[ink] (3.3,0) -- (4.1,0);
+  \node[boxhi, minimum height=6mm] (f) at (4.9,0) {\texttt{forget}};
+  \node[lbldim, below=1.5mm of h2.south, xshift=-7.5mm] {$H\cdot H = I$: the register is $|0\rangle$ again};
+\end{tikzpicture}
+\end{document}
