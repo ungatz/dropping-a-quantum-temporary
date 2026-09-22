@@ -1,16 +1,15 @@
 -- rus.s: one repeat-until-success iteration, unrolled; both branches of the
--- conditional are the same code.
+-- conditional are the same code.  A three-level block on a three-level
+-- input register, so the file is outside the compiler's domain.
 --
--- Expected: drop t at depth 1, selection 1 (block {0,1}, weight 8/9):
--- INADMISSIBLE.
--- Expected: drop t at depth 1, selection 0 (block {2}, weight 1/9):
--- ADMISSIBLE, on the line (0, 0, 1).  The prefix parks t on (1, 1, 1/2);
--- selecting {2} is what leaves it on the basis line |2>.
+-- Site: drop t (depth 1).  Expected: record 1 (block {0,1}, weight 8/9):
+-- UNSAFE.  Record 0 (block {2}, weight 1/9): SAFE, certificate (0,0,1).
 
-vis x:3;
-
-new t:3;
-gate tilt t;
-lift p = meas t in {0,1};
-if p { gate READ3 x t; } else { gate READ3 x t; }
-drop t;
+prog rus (x : [3]) : [3] {
+    new t : [3] @ |0>;
+    tilt t;
+    p = lift[{0,1}] t;
+    if p { READ3 x t; } else { READ3 x t; }
+    drop t;
+    return x
+}

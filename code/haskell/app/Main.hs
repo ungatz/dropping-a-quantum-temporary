@@ -1,5 +1,5 @@
--- | The @dqt@ command line: one subcommand per object this library builds.
--- Every number it reports is computed here, not transcribed.
+-- | The @dqt@ command line: one subcommand per object the paper describes.
+-- Every number the paper prints is computed here, not transcribed.
 module Main (main) where
 
 import System.Environment (getArgs)
@@ -7,33 +7,30 @@ import System.Exit (exitFailure)
 import System.IO (hPutStr, hPutStrLn, stderr)
 import Data.List (intercalate)
 
-import DQT.Bridge
-import DQT.Corpus.Classical
-import DQT.Criterion
-import DQT.Corpus.Examples
-import DQT.Lifted
-import DQT.Lifted.Programs
-import DQT.Calculus.Metatheory
-import DQT.Many.Multi
-import DQT.Many.Nested (nestedReport)
-import DQT.Pretty
-import DQT.Corpus.Producer (catalogueTex, producerReport)
-import DQT.Many.Release (poolReport)
-import DQT.Report
-import DQT.Residual
-import DQT.Algebra.Scalar (showK)
-import DQT.Calculus.Syntax
-import DQT.Calculus.Typing
-import DQT.Criterion.Witness
+import Drop.Bridge
+import Drop.Theory.Corpus.Classical
+import Drop.Theory.Criterion
+import Drop.Theory.Corpus.Examples
+import Drop.Theory.Lifted
+import Drop.Theory.Lifted.Programs
+import Drop.Theory.Many.Multi
+import Drop.Theory.Many.Nested (nestedReport)
+import Drop.Theory.Pretty
+import Drop.Theory.Report
+import Drop.Theory.Residual
+import Drop.Theory.Algebra.Scalar (showK)
+import Drop.Theory.Program.Syntax
+import Drop.Theory.Program.Typing
+import Drop.Theory.Criterion.Witness
 
-import qualified S.Report.Run as SRun
-import qualified S.Suite as SSuite
-import qualified S.Report.Trace as STrace
-import qualified S.Report.Explain as SExplain
+import qualified Drop.Lang.Report.Run as SRun
+import qualified Drop.Lang.Suite as SSuite
+import qualified Drop.Lang.Report.Trace as STrace
+import qualified Drop.Lang.Report.Explain as SExplain
 
 usage :: String
 usage = unlines
-  [ "dqt -- the affine drop calculus and its checker"
+  [ "dqt -- the drop criterion and its checker"
   , ""
   , "  dqt list                 every program in the catalogue, with its verdict"
   , "  dqt show    <name>       the program, sugared and raw"
@@ -41,21 +38,19 @@ usage = unlines
   , "  dqt gram    <name>       the core map, its slices, and the Gram matrix"
   , "  dqt witness <name>       synthesise the shape sep(R,W), and verify it"
   , "  dqt context <name>       what a client can see"
-  , "  dqt multi                many temporaries: bundling, joint vs per-wire"
+  , "  dqt multi                many temporaries: bundling, joint vs per-register"
   , "  dqt nested               nested allocation: does the witness survive?"
   , "  dqt lifted               dynamic lifting: the verdict profile"
   , "  dqt residual             the runtime check, as an emitted table"
   , "  dqt classical            the classical core, and the two-level converse"
-  , "  dqt all                  list, show, multi, lifted, residual and classical"
+  , "  dqt all                  everything, in the paper's order"
   , ""
-  , "the producer rules, the pool, and the language layer"
+  , "the two engines, and the language layer"
   , ""
-  , "  dqt metatheory           the calculus is well defined: the checked list"
-  , "  dqt catalogue            the two producer rules against the criterion"
-  , "  dqt catalogue --tex      the same table, as a LaTeX tabular"
-  , "  dqt pool                 what each program returns to the pool"
   , "  dqt bridge               the two engines, and the two runtime checks"
   , "  dqt run <file.s>         run one surface program and report on its drops"
+  , "  dqt typecheck <file.s>   parse and typecheck one surface program"
+  , "  dqt compile <file.s>     compile one surface program to OpenQASM 3"
   , "  dqt trace <file.s> [--input NAME]"
   , "                            the run, frame by frame, one temporary at a time"
   , "  dqt pass <file.s>        the static pass behind the runtime check, stage by stage"
@@ -80,13 +75,11 @@ main = do
     ["residual"]          -> putStr cmdResidual
     ["classical"]         -> putStr cmdClassical
     ["all"]               -> putStr cmdAll
-    ["metatheory"]        -> putStr metatheoryReport
-    ["catalogue"]         -> putStr producerReport
-    ["catalogue", "--tex"] -> putStr catalogueTex
-    ["pool"]              -> putStr poolReport
     ["bridge"]            -> putStr bridgeReport >> putStrLn ""
                              >> putStr residualBridgeReport
     ["run", f]            -> SRun.runFile f
+    ["typecheck", f]      -> SRun.typecheckFile f
+    ["compile",   f]      -> SRun.compileFile f
     ["trace", f]          -> STrace.traceFile f Nothing
     ["trace", f, "--input", inp] -> STrace.traceFile f (Just inp)
     ["pass", f]           -> SExplain.passFile f
@@ -106,11 +99,8 @@ main = do
 withProgram :: String -> (Program -> IO ()) -> IO ()
 withProgram n k = case byName n of
   Just p  -> k p
-  -- To standard error, for the reason the unrecognised-subcommand branch
-  -- gives: this is a diagnostic, and a caller piping the report somewhere
-  -- should get an empty pipe rather than a sentence about a missing program.
   Nothing -> do
-    hPutStrLn stderr ("dqt: no program named " ++ show n ++ "; try `dqt list'")
+    putStrLn ("no program named " ++ show n ++ "; try `dqt list'")
     exitFailure
 
 prettyBoth :: Program -> String
@@ -124,7 +114,7 @@ cmdList = table ["name", "shape?", "verdict", "witness"]
     , either (const "-") witnessWord (checkProgram p) ]
   | (n, p) <- catalogue ]
   where
-    yn = yesNo
+    yn b = if b then "yes" else "no"
     verdictWord tp = case verdict tp of
       Safe _     -> "SAFE"
       Vacuous    -> "vacuous"
@@ -170,40 +160,28 @@ cmdLifted = unlines (concatMap one
   where
     one p = case checkLProgram p of
       Left e   -> subHead (lLabel p) ++ kv "TYPE ERROR" (show e)
-      Right tp ->
-        -- The two column widths are measured, not assumed.  A record prints as
-        -- @[In,Out]@, so its width grows with the lift depth, and a weight is
-        -- an exact field element, which can be long; a constant would push the
-        -- widest row one place right of the rule above it and take the hanging
-        -- indent with it.
-        let prof = verdictProfile tp
-            tw   = 1 + maximum (5 : map (length . traceCell)  prof)
-            ww   = 1 + maximum (6 : map (length . weightCell) prof)
-        in subHead (lLabel p)
+      Right tp -> subHead (lLabel p)
         ++ kv "lift depth" (show (ltDepth tp) ++ "   ("
                             ++ show (2 ^ ltDepth tp :: Int)
                             ++ " measurement records)")
         ++ blank
-        ++ [ "      " ++ pad tw "trace" ++ pad ww "weight" ++ "verdict"
-           , "      " ++ replicate (tw - 1) '\9472' ++ " "
-             ++ replicate (ww - 1) '\9472' ++ " "
-             ++ replicate (measure - 6 - tw - ww) '\9472' ]
-        ++ concatMap (traceRow tw ww) prof
+        ++ [ "      " ++ padSep 8 "trace" ++ padSep 10 "weight" ++ "verdict"
+           , "      " ++ replicate 7 '\9472' ++ " " ++ replicate 9 '\9472'
+             ++ " " ++ replicate (measure - 24) '\9472' ]
+        ++ concatMap traceRow (verdictProfile tp)
         ++ blank
         ++ kvs
            [ ("the same verdict at every trace", yesNo (constantProfile tp))
            , ("oracle-split", yesNo (oracleSplit tp))
-           , ("so no static rule can accept it",
-               yesNo (everySoundStaticDisciplineRejects tp)) ]
-    traceCell  tv = filter (/= '"') (show (tvTrace tv))
-    weightCell tv = maybe "-" showK (tvWeight tv)
-    pad w x = x ++ replicate (max 1 (w - length x)) ' '
-    traceRow tw ww tv = case lines (show (tvVerdict tv)) of
+           , ("so no record-oblivious verdict can accept it",
+               yesNo (everySoundRecordObliviousVerdictRejects tp)) ]
+    traceRow tv = case lines (show (tvVerdict tv)) of
       []       -> []
       (l : ls) ->
-        let w      = measure - 6 - tw - ww
-            hang x = "      " ++ replicate (tw + ww) ' ' ++ x
-            first  = "      " ++ pad tw (traceCell tv) ++ pad ww (weightCell tv)
+        let w      = measure - 24
+            hang x = "      " ++ replicate 18 ' ' ++ x
+            first  = "      " ++ padSep 8 (filter (/= '"') (show (tvTrace tv)))
+                     ++ padSep 10 (maybe "-" showK (tvWeight tv))
         in case wrapAt w l of
              []       -> []
              (f : fs) -> (first ++ f) : map hang (fs ++ concat
@@ -219,7 +197,7 @@ cmdResidual = unlines (concatMap one [liftedWitness, liftedWitnessNoRead])
 cmdClassical :: String
 cmdClassical = unlines $
   subHead (cpLabel classicalWitness)
-  ++ [ "      outcome " ++ padTo 8 (filter (/= '"') (show b))
+  ++ [ "      outcome " ++ padSep 8 (filter (/= '"') (show b))
        ++ (if sf then "safe" else "leaks the visible bit")
      | (b, sf) <- classicalProfile classicalWitness ]
   ++ blank
@@ -244,7 +222,7 @@ cmdAll = unlines $
   ++ blank
   ++ [cmdList]
   ++ para (show admittedCount ++ " of " ++ show catalogueSize
-           ++ " drops are admissible; " ++ show inShapeCount
+           ++ " drops are safe; " ++ show inShapeCount
            ++ " programs are literally separable.")
 
   ++ sectionHead 2 "three programs in full" "where a verdict comes from"
@@ -285,14 +263,14 @@ cmdAll = unlines $
 masthead :: [String]
 masthead =
   [ thickRule
-  , "  DROPPING A QUANTUM TEMPORARY"
-  , "  when a scratch register may be discarded, and what it costs"
+  , "  SAFE TO DROP"
+  , "  when a quantum temporary may be discarded, and what it costs"
   , thickRule ]
   ++ blank
   ++ para "drop t does nothing at run time. The question is whether the rest of the program can tell."
   ++ blank
   ++ [ "  NOTATION" ]
-  ++ [ "    " ++ padTo 16 k ++ v
+  ++ [ "    " ++ padSep 16 k ++ v
      | (k, v) <-
        [ ("d, m",          "dimension of the temporary, and of the visible register")
        , ("K",             "the core map  H_m --> H_d (x) H_m")

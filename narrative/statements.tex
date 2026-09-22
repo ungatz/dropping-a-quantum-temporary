@@ -1,265 +1,531 @@
-% ===========================================================================
-% statements.tex -- every statement that appears in more than one document,
-% written once, as a macro.
-%
-% The paper and its supplement share theorems.  The moment the same statement
-% is typed into two files they start to drift, and a dropped hypothesis in one
-% of them is a false claim nobody notices.  So every theorem statement lives
-% here, whether both documents print it or only the supplement does, and each
-% document calls the macro rather than retyping the words.  A few are held here
-% without being called: their sections carry an outline rather than the write-up,
-% and the statement waits here so that it cannot drift in the meantime.
-% ===========================================================================
-
 \newcommand{\exRunning}{%
 \begin{example}[the running examples]\label{ex:three}
 \leavevmode
-\begin{center}
+\begin{center}\small
 \begin{tabular}{@{}lll@{}}
 \toprule
-(a) \emph{superpose, then drop} & (b) \emph{superpose, then read} & (c) \emph{measure, then read} \\
+(a) \emph{superpose, then drop} & (b) \emph{superpose, then read} & (c) \emph{copy, measure, one joint gate} \\
 \midrule
-\texttt{let t = new |0>} & \texttt{let t = new |0>} & \texttt{let t = new |0>} \\
-\texttt{\ \ t := H t;}   & \texttt{\ \ t := H t;}   & \texttt{\ \ t := tilt t;} \\
-                          &                           & \texttt{\ \ let p = lift(meas t in S)} \\
-                          & \texttt{\ \ v := v + t;} & \texttt{\ \ v := v + t;} \\
-\texttt{\ \ drop t; v}    & \texttt{\ \ drop t; v}   & \texttt{\ \ drop t; v} \\
+\texttt{prog a (v : [2]) : [2] \{} & \texttt{prog b (v : [2]) : [2] \{} & \texttt{prog c (v : [2]) : [2] \{} \\
+\texttt{\ \ new t : [2] @ |0>;}    & \texttt{\ \ new t : [2] @ |0>;}    & \texttt{\ \ new t : [2] @ |0>;} \\
+\texttt{\ \ H t;}                  & \texttt{\ \ H t;}                  & \texttt{\ \ H v;\ \ CX v t;} \\
+                                   & \texttt{\ \ CX t v;}               & \texttt{\ \ p = lift[\{0\}] t;} \\
+                                   &                                    & \texttt{\ \ V t v;} \\
+\texttt{\ \ drop t;}               & \texttt{\ \ drop t;}               & \texttt{\ \ drop t;} \\
+\texttt{\ \ return v \}}           & \texttt{\ \ return v \}}           & \texttt{\ \ return v \}} \\
 \bottomrule
 \end{tabular}
 \end{center}
 \end{example}}
 
-
-% --- statements proved in the supplement -----------------------------------
-
-% manuscript thm:meta, without the term-calculus clause
-\newcommand{\stmtMeta}{%
-\begin{theorem}[metatheory of the lifted calculus]\label{thm:meta}
-Fix a measurement record $o$.
-\begin{enumerate}
-\item A well-typed configuration is terminal or steps; the step preserves
-  typing, the parameter store binds exactly the parameters in scope, and no
-  step names a dropped temporary.
-\item Every run halts, and its terminal joint state is $E_o(c)$ applied to the
-  visible input, where $E_o(c)$ is the selected denotation of $c$ along $o$.
-\end{enumerate}
-Hence the drop of $c$ is operationally safe under $o$ if and only if $E_o(c)$
-is drop-safe.
-\end{theorem}}
-
-% the proportionality lemma (body sec 3.4; proof in A.1)
-\newcommand{\stmtProp}{%
-\begin{lemma}[proportionality]\label{lem:prop}
-Let $K_0, \ldots, K_{d-1}$ and $M$ be linear maps on $\R^{m}$, and suppose
-$\sum_i (K_i x)(K_i x)^{\top} = (Mx)(Mx)^{\top}$ for every $x$. Then $K_i =
-c_i M$ for scalars $c_i$.
-\end{lemma}}
-
-% the summed-channel pair (body sec 3.4; proof in A.1)
 \newcommand{\stmtChannel}{%
 \begin{proposition}[the summed channel does not decide]\label{prop:channel}
-There are two well-typed commands on a temporary qubit and a visible qubit,
+There are two well-typed programs on a temporary qubit and a visible qubit,
 each with two reachable records, that have the same summed channel $\Phi_0 +
 \Phi_1$ and the same weight on every branch at every input, and opposite
 verdicts on every branch.
 \end{proposition}}
 
-% product at every input: the constant-factor dichotomy (body sec 3.1; proof in A.1)
 \newcommand{\stmtProductwise}{%
 \begin{proposition}[a product at every input]\label{prop:productwise}
-Let $K : \R^{m} \to \R^{d} \otimes \R^{m}$ be linear, and suppose $Kv$ is
-a product vector, or zero, for every $v$. Then $K$ has one of exactly two
-shapes:
+Let $K : \den{\Omega} \to \Hv \otimes \Hrest$ be linear, with $n = \dim\den{\Omega}$,
+and suppose $Kx$ is a product vector, or zero, for every $x$. Then $K$ has one of
+two shapes, and both exactly when $K$ has rank at most one.
+Here the language spaces $\Hv$ and $\Hrest$ have positive dimension;
+the empty register tuple denotes $\C$.
 \begin{description}
-\item[the temporary is fixed] $K = g \otimes W$ for a vector $g \in \R^{d}$
-  and a matrix $W$ on $\R^{m}$ --- the visible register varies, the temporary
+\item[the temporary is fixed] $K = g \otimes W$ for a vector $g \in \Hv$
+  and a linear $W : \den{\Omega} \to \Hrest$ --- the rest varies, the temporary
   does not;
-\item[the visible register is fixed] $Kv = Gv \otimes w$ for a fixed nonzero
-  $w \in \R^{m}$ and a linear $G : \R^{m} \to \R^{d}$ --- the temporary
-  varies, the visible register does not.
+\item[the rest is fixed] $Kx = Gx \otimes w$ for a fixed nonzero
+  $w \in \Hrest$ and a linear $G : \den{\Omega} \to \Hv$ --- the temporary
+  varies, the rest does not.
 \end{description}
-The first shape is drop safety. A map of the second is drop-safe exactly when
-$G$ has rank at most one, so such an isometry with $m \ge 2$ never is.
+The first shape is what \cref{def:site} asks of a site map. A map of
+the second shape is $g \otimes W$ exactly when $G$ has rank at most one, so
+such an isometry with $n \ge 2$ never is.
 \end{proposition}}
 
-% the relativised criterion (body sec 5; proof in A.2)
-\newcommand{\stmtRelativised}{%
-\begin{theorem}[the relativised criterion]\label{thm:relativised}
-Let $\mathcal A$ be a gate ring completable in the temporary's dimension
-and $U$ a program over $\mathcal A$. Then $U$ is weakenable by gates over
-$\mathcal A$ if and only if $U$ is drop-safe and $\mathcal A$ splits
-$\mathrm{proj}(U)$.
-\end{theorem}}
-
-% without typing (body sec 4; proof in A.1)
-\newcommand{\stmtUntyped}{%
-\begin{proposition}[without typing]\label{prop:untyped}
-For a program of the grammar whose gates are arbitrary linear maps,
-weakenability is equivalent to drop safety together with $\|Kv\| = \|v\|$ for
-every $v$. The norm clause cannot be dropped: at $d = m = 1$ the one-gate
-program that doubles the visible register is drop-safe and not weakenable.
-\end{proposition}}
-
-
-% what the Gram matrix is (body sec 3.1; proof in A.1)
 \newcommand{\stmtGram}{%
-\begin{proposition}[what the Gram matrix is]\label{prop:gram}
-Let $K$ be the denotation of a typed program, with Kraus operators $K_i$
-and Gram matrix $\Gamma$.
-\begin{enumerate}
-\item The drop is safe if and only if $K_i^{\dagger} K_j = c_{ij} I$ for
-  all $i, j$, and then $c = \Gamma/m$; over $\C$, if and only if the
-  temporary's final state is the same at every unit input.
-\item $\operatorname{rank}\Gamma$ is the least temporary dimension of a
-  typed program whose visible channel $\rho \mapsto \sum_i K_i \rho K_i^{\dagger}$
-  is that of $K$.
-\item $\Gamma$ is unchanged by a visible gate after the scope, and a gate
-  $U$ on the temporary carries it to $\bar U \Gamma U^{\top}$.
+For a site map $K:\den\Omega\to\Hv\otimes\Hrest$, including a map on a measurement record, put
+\[
+ d=\dim\Hv\ge1,\qquad n=\dim\den\Omega\ge1,\qquad
+ K_i=(\bra i\otimes I)K,\qquad
+ \Gamma_{ij}=\operatorname{tr}(K_i^{\dagger}K_j).
+\]
+The Gram matrix $\Gamma$ records the pairwise inner products of the
+operators $K_i$. No isometry hypothesis is needed in the proposition.
+\begin{proposition}[the Gram test]\label{prop:gram}
+\leavevmode
+\begin{enumerate}[beginpenalty=10000]
+\item \emph{Fixed block.} At a site without loans this is the safety test:
+the following are equivalent:
+\[
+ K=g\otimes W\text{ for a unit }g
+ \quad\Longleftrightarrow\quad \operatorname{rank}\Gamma\le1
+ \quad\Longleftrightarrow\quad
+ \Gamma^2=(\operatorname{tr}\Gamma)\Gamma.
+\]
+\item \emph{Least block dimension.} The map
+$\rho\mapsto\sum_iK_i\rho K_i^{\dagger}$ can be represented using a
+block of dimension $r\ge1$ exactly when
+$r\ge\max(1,\operatorname{rank}\Gamma)$.
+\item \emph{Changing gates.} A unitary on the rest leaves $\Gamma$
+unchanged. A unitary $U$ on the block changes it to
+$\bar U\Gamma U^{\top}$.
 \end{enumerate}
 \end{proposition}}
 
-
-\newcommand{\stmtClassicalCost}{%
-\begin{theorem}[the classical price]\label{thm:classicalcost}
-Deciding whether a circuit program over the gate set $\{X, \mathrm{CNOT},
-\mathrm{Toffoli}\}$ is drop-safe is coNP-complete.
-\end{theorem}}
-
-\newcommand{\stmtAverageCost}{%
-\begin{proposition}[the price at the maximally mixed input]\label{prop:avgcost}
-Fix a polynomial $p : \N \to \N$ with $p(n) \ge 1$ for every $n$, let $\varepsilon = 1/p(\text{size})$, and let the
-circuit program's gates come from a fixed finite set. Deciding, for such
-a program promised either drop-safe or $\bar\iota(K) \ge \varepsilon$,
-which holds is in BQP.
+\newcommand{\stmtScalar}{%
+\begin{proposition}[the block may learn nothing and the drop be unsafe]\label{prop:scalar}
+Let $K=\sigma_s$ be the isometric map of a measurement-free site with
+no loans in its block. Use the operators $K_i$ of \cref{prop:gram}.
+The block has the same reduced state at every unit input exactly when
+\[
+ K_i^{\dagger}K_j=c_{ij}I\qquad\text{for all }i,j.
+\]
+Under this condition the drop is safe exactly when $c$ has rank one.
+Then $c_{ij}=\bar g_i g_j$ for a unit certificate $g$. In contrast,
+the program below has the constant mixed state $c=I/2$ and is unsafe.
 \end{proposition}}
 
-
-% contextual indistinguishability (body sec 4.1; proof in A.1)
-\newcommand{\stmtCtxEquiv}{%
-\begin{theorem}[the criterion is contextual indistinguishability]\label{thm:ctxequiv}
-Let $F$ be any class of visible gates containing the reflections. A typed
-program is weakenable if and only if $F$ does not distinguish it from some
-separable program.
-\end{theorem}}
-
-
-% the square root (body sec 8; proof in A.4)
-% The zero-width non-joiner breaks the small-caps Qu ligature of the theorem
-% head, whose ToUnicode map extracts it as a bare Q: without it the title
-% copies and reads aloud as "sqare root". An empty group does not work here --
-% HarfBuzz shapes across it -- and this is the only word in either document
-% the ligature damages.
-\newcommand{\stmtSqrt}{%
-\begin{corollary}[dropping one at a time can cost a sq\char"200C uare root]\label{cor:sqrt}
-Over $\mathcal A = \Z[1/2]$, the two-qubit program that applies the joint
-reflection carrying $|00\rangle$ to $\tfrac12(|00\rangle + |01\rangle +
-|10\rangle + |11\rangle)$ and drops both temporaries has a safe composite drop
-with a witness over $\mathcal A$, each qubit separately constant, and no
-nested witness over $\mathcal A$.
-\end{corollary}}
-
-% the verdict is outcome-dependent (body sec 6; proof in A.3)
-\newcommand{\stmtNoText}{%
-\begin{theorem}[the verdict is outcome-dependent]\label{thm:notext}
-Let $c$ be the command above.
-\begin{enumerate}
-\item $c$ is well typed, with an empty parameter context and a live
-  temporary.
-\item Under the record selecting $\{0,1\}$ the selected denotation is
-  $K_{\mathrm{in}} v = \tfrac23({\color{accent}|0\rangle \otimes v} + {\color{accentwarm}|1\rangle \otimes Xv})$
-  and the drop is unsafe; under the record selecting $\{2\}$ it is
-  $K_{\mathrm{out}} v = \tfrac13\, {\color{accentplum}|2\rangle \otimes X^{2} v}$ and the drop is
-  safe. Both records are reachable, with weights $8/9$ and $1/9$ at every unit
-  input.
-\item No lift-free command has a denotation agreeing with $c$ under both
-  records.
-\end{enumerate}
-\end{theorem}}
-
-% manuscript thm:cliffordT; part (2) at any visible register
 \newcommand{\stmtCliffordT}{%
 \begin{theorem}[the Clifford$+T$ coefficient ring splits]\label{thm:cliffordT}
 Let $\mathcal R = \Z[1/\sqrt2, i]$ and $d \ge 1$.
 \begin{enumerate}
 \item Every rank-one projection on $\C^{d}$ with entries in $\mathcal R$ is
   $zz^{\dagger}$ for a vector $z$ over $\mathcal R$.
-\item Consequently, at a temporary of any dimension and any visible register,
-  a program over $\mathcal R$ is weakenable by gates over $\mathcal R$ if and
-  only if it is drop-safe.
+\item For unit $g$, the ray $[g]$ carries a unit vector over $\mathcal R$ exactly
+  when its projection $gg^{\dagger}$ has entries in $\mathcal R$.
+
+  At a safe temporary site over $\mathcal R$, suppose the surviving weight
+  at some basis input is a unit of the ring. The certificate then carries
+  a unit vector over $\mathcal R$.
+
+  A measurement-free temporary site over $\mathcal R$ has a witness over
+  $\mathcal R$ exactly when it is safe: its record has weight $1$.
 \end{enumerate}
 \end{theorem}}
 
-% the four restricted rings of Amy--Glaudell--Ross (proof in A.2)
 \newcommand{\stmtRings}{%
 \begin{proposition}[the restricted rings]\label{prop:rings}
 Over $\Z[1/2, i]$ and over $\Z[i/\sqrt2]$, every rank-one projection with
 entries in the ring, in every dimension, is $zz^{\dagger}$ for a $z$ over the
-ring. Over $\Z[1/2]$ the projection onto $|{+}\rangle$ is not, and over
-$\Z[1/\sqrt2]$ the projection onto $\cos\tfrac{\pi}{8}|0\rangle +
-\sin\tfrac{\pi}{8}|1\rangle$ is not.
+ring. Over $\Z[1/2]$ the projection onto $\ket+$ is not, and over
+$\Z[1/\sqrt2]$ the projection onto $\cos\tfrac{\pi}{8}\ket0 +
+\sin\tfrac{\pi}{8}\ket1$ is not.
 \end{proposition}}
 
+\newcommand{\seqop}{\mathbin{+\mkern-8mu+}}
+\newcommand{\Hhid}{\Hilb_{\mathsf{hid}}}
 
-% manuscript thm:bundle, restructured; (2) is the manuscript's lemma
-\newcommand{\stmtBundle}{%
-\begin{theorem}[the composite temporary]\label{thm:bundle}
-Let $c$ be a well-typed lifted command over temporaries $t_1, \ldots, t_n$
-with $n \ge 1$, and $\langle c \rangle$ its composite temporary.
+\newcommand{\stmtTypeSafety}{%
+\begin{theorem}[type safety]\label{thm:typesafety}
+Let $\vdash \langle \Delta, \sigma \parallel M\rangle : A$ be a well-typed
+configuration of the measurement-free machine.
 \begin{enumerate}
-\item $\langle c \rangle$ is well typed and, along every measurement record, runs
-  with the same parameter store and the same joint state as $c$.
-\item Let $c$ be measurement-free and well-scoped. For every $k$ such that $c$
-  contains $\drop\ t_k$, dropping $t_k$ at that site is safe if and only if
-  $t_k$ is separately constant in the final state.
-\item Let $c$ be measurement-free. Every temporary is separately constant
-  in the final state if and only if the composite drop is safe and its final state $g$ is a full product
-  $g_1 \otimes \cdots \otimes g_n$; at $n = 2$, if and only if the composite drop
-  is safe and the $d_1 \times d_2$ matrix $g$ has vanishing $2 \times 2$ minors.
+\item \emph{Progress.} Either $M$ is \texttt{return }$v$, and the
+  configuration is final, or exactly one rule applies to it, and the successor is
+  determined once the name \textsc{Step-New} allocates is fixed.
+\item \emph{Preservation.} The step yields a well-typed configuration at
+  the same type $A$.
+\item \emph{Termination.} Every run from the configuration reaches a final
+  configuration in exactly $|M|$ steps, where $|M|$ counts its statements
+  and does not count \texttt{return}.
+\item \emph{Adequacy.} The run from $\langle \Omega, x \parallel M\rangle$,
+  the input registers allocated and the names it allocates fresh for $M$, ends in the
+  state $\den{M}\,x$.
 \end{enumerate}
 \end{theorem}}
 
-% manuscript thm:nested
-\newcommand{\stmtTrichotomy}{%
-\begin{proposition}[the nested witness: a trichotomy]\label{prop:trichotomy}
-Let $P$ be well-typed, measurement-free and well-scoped, with temporaries
-$t_1, \ldots, t_n$, a nonempty visible register, and gates over a gate ring
-$\mathcal A$. Exactly one of the following holds.
+\newcommand{\stmtDesugar}{%
+\begin{lemma}[desugaring]\label{lem:desugar}
+Suppose $\Omega_1\vdash M_1:A$,
+$\Omega_{\bar y}\vdash\bar y:A$, and
+$\Omega_2,\Omega_{\bar y}\vdash M_2:B$.
+The three contexts are pairwise disjoint. Every name bound in $M_1$
+(register or parameter) is fresh for $M_2$, $\bar y$ and $\Omega_2$.
+Every name bound in $M_2$ is fresh for $\Omega_1$ and $\bar y$.
 \begin{enumerate}
-\item The composite drop is unsafe. No witness of any shape exists.
-\item The composite drop is safe and its final state $g$ is not a full product.
-  No nested witness exists.
-\item The composite drop is safe and $g = g_1 \otimes \cdots \otimes g_n$. Every
-  temporary is separately constant; a nested witness over $\mathcal A$ exists
-  \emph{only if} each ray $[g_k]$ carries a unit vector with entries in
-  $\mathcal A$, and \emph{does} exist if each $[g_k]$ carries a real unit
-  vector $u_k$ over $\mathcal A$ with $\|e_{i_k} - u_k\|^{2}$ zero or
-  invertible in $\mathcal A$.
+\item $\Omega_1, \Omega_2 \vdash M_1 \seqop_{\bar y} M_2 : B$.
+\item Every run of $M_1$ to \texttt{return }$v$, followed by the run of
+  $M_2[v/\bar y]$ from the state it reaches, is a run of $M_1 \seqop_{\bar y} M_2$:
+  same record and state. In the measurement-free case,
+  \[
+  \den{M_1\seqop_{\bar y}M_2}
+  =(\id_{\Hhid^{M_1}}\otimes\den{M_2})
+    \circ(\den{M_1}\otimes\id_{\den{\Omega_2}}).
+  \]
+\item $|M_1 \seqop_{\bar y} M_2| = |M_1| + |M_2|$.
+Here $|M|$ counts statements along the longest branch of $M$:
+\texttt{return} counts zero, each other statement counts one, and an
+\texttt{if} counts one plus the larger count of its two arms.
 \end{enumerate}
-\end{proposition}}
+The disjointness of $\Omega_{\bar y}$ from $\Omega_1$ is not decoration:
+without it the componentwise renaming can clone a register. The converse of (1) is
+false --- the continuation may name a register of $\Omega_1$ directly.
+\end{lemma}}
 
-% manuscript thm:typingsplit
-\newcommand{\stmtTypingSplit}{%
-\begin{theorem}[typing decomposes per lifetime]\label{thm:typingsplit}
-A lift-free multi-temporary command is well typed if and only if every gate
-is a unitary of its declared shape and, for every name $t$, the projection of
-the command to $t$ obeys the one-temporary discipline. The judgement carries
-no cross-temporary information.
-\end{theorem}}
-
-% manuscript thm:perwire, with the pair inside the statement (proof in A.4)
-\newcommand{\stmtPerwire}{%
-\begin{theorem}[no per-lifetime analysis decides drop safety]\label{thm:perwire}
-Take two temporary qubits $a, b$ and one visible qubit $v$, all allocated at
-$|0\rangle$, and the programs
+\newcommand{\stmtCompile}{%
+\begin{theorem}[compilation]\label{thm:compile}
+Let $M$ be a measurement-free program in the compilation fragment.
+Assume each safe site $s_1,\ldots,s_r$ is emittable. Write $E_M$ for the
+emitted circuit's map and $R^{s_j}$ for the ideal reclaiming gate at $s_j$.
+\begin{enumerate}
+\item \emph{Full state.} There is one scalar $z$, $|z|=1$, such that
 \[
-\begin{array}{l@{\qquad}l}
-P_{\mathrm{safe}}: & H_b;\; \mathrm{CX}(v{\to}a);\; \mathrm{CX}(v{\to}a);\; {\color{accentwarm}\mathrm{CX}(b{\to}v)}\\
-P_{\mathrm{unsafe}}: & H_b;\; \mathrm{CX}(v{\to}a);\; {\color{accentwarm}\mathrm{CX}(b{\to}v)};\; \mathrm{CX}(v{\to}a).
-\end{array}
+ E_M=z\,(R^{s_1}\otimes\cdots\otimes R^{s_r}\otimes I)\circ\den M.
 \]
-Their projections to $a$ and to $b$ are equal, dropping $a$ is safe after
-$P_{\mathrm{safe}}$ and unsafe after $P_{\mathrm{unsafe}}$. Hence no
-predicate on families of per-temporary projections agrees with drop safety
-on all well-typed straight-line two-temporary programs.
+The output factors are grouped by dropped block, in site order, followed
+by the remaining factors. The scalar $z$ is independent of every input,
+including the states of the loans; it is the product of the phases
+omitted during emission.
+\item \emph{Returned output.} The emitted circuit and $M$ have the same
+reduced state on the returned registers at every input. If no reclaiming
+gate is inserted, their full maps differ only by $z$.
+\item \emph{Reusable registers.} Each reclaimed temporary is in its
+allocation state. Each reclaimed loan is in its original state, with
+its correlations with the caller preserved. These are equalities of
+states, so the global phase in (1) does not affect them.
+\end{enumerate}
 \end{theorem}}
 
+\newcommand{\Hv}{\Hilb_{v}}
+\newcommand{\Hrest}{\Hilb_{\mathsf{rest}}}
+\newcommand{\Hloan}{\Hilb_{\mathrm{loan}}}
+\newcommand{\Hother}{\Hilb_{\mathsf{other}}}
+\newcommand{\pfx}[2]{#1|_{#2}}
+
+\newcommand{\stmtSite}{%
+\begin{definition}[the site, and safety at it]\label{def:site}
+Let $\jty{\Omega}{M}{A}$ be a program.
+\begin{enumerate}[beginpenalty=10000]
+\item A \emph{site} $s$ of $M$ is an occurrence of $\drop\,v$ in it. Its
+  \emph{block} is the ordered list of registers $v$ names --- none for $v = ()$, a site
+  with $\Hv = \C$, safe with the unit scalar as certificate;
+  $\Hv$ is the tensor product of
+  their spaces in that order. The space $\Hrest$ is the tensor product of all remaining
+  register spaces: inputs in context order, followed by allocations,
+  including previously dropped registers (\cref{sec:lang:dynamics}).
+\item The \emph{site map} $\sigma_s : \den{\Omega} \to \Hv \otimes \Hrest$
+  sends an input vector $\xi\in\den\Omega$ to the joint state of all
+  registers just before the drop. The block factors are listed first;
+  no physical gate is applied by this regrouping.
+\item First suppose none of the registers named by this drop is marked
+  \texttt{loan}. They may be allocated temporaries or unmarked inputs.
+  The site is \emph{safe} when its site map
+  factors,
+  \[ \sigma_s = g \otimes W, \]
+  for a unit vector $g \in \Hv$, the site's \emph{certificate}, and a linear
+  $W : \den{\Omega} \to \Hrest$: the block comes out in the one state $g$
+  whatever the input.
+\item If the drop also names registers marked \texttt{loan}, they must be
+  returned in their unknown original states. Group those input factors as $\den{\Omega} =
+  \Hloan \otimes \den{\Omega'}$, the block's loans and the rest, and the site
+  is \emph{safe} when
+  \[ \sigma_s = B \otimes W \]
+  for an isometry $B : \Hloan \to \Hv$, the site's \emph{block factor}, and a
+  linear $W : \den{\Omega'} \to \Hrest$. Clause (3) is the case $\Hloan = \C$,
+  $B = g$.
+\end{enumerate}
+\end{definition}}
+
+\newcommand{\stmtModular}{%
+\begin{proposition}[safety is modular]\label{prop:modular}
+Let $\sigma_s$ be the linear map of a site as in \cref{def:site}.
+Let $\Hilb_c\ne0$ be a client register on which the program does nothing.
+Then
+\[
+ \sigma_s\otimes I_c=B\otimes W'
+ \text{ for some }W'
+ \quad\Longleftrightarrow\quad
+ \sigma_s=B\otimes W\text{ for some }W.
+\]
+The same isometric block factor $B$ works on both sides, including when
+the client is entangled with the inputs. For a block without loans,
+read $B=g$.
+\end{proposition}}
+
+\newcommand{\stmtIsoExt}{%
+\begin{lemma}[isometry extension]\label{lem:isoext}
+Let $\Hilb$ be a finite-dimensional complex Hilbert space. Every isometry
+$V : S \to \Hilb$ out of a subspace $S \subseteq \Hilb$ is the restriction of
+a unitary of $\Hilb$.
+\end{lemma}}
+
+\newcommand{\stmtCriterion}{%
+\begin{theorem}[the criterion, and contextual equivalence]\label{thm:criterion}
+In the Setting, the following are equivalent.
+\begin{enumerate}
+\item $s$ is safe.
+\item $\sigma_s = g \otimes W$ for a unit $g \in \Hv$ and an isometry
+  $W : \den{\Omega} \to \Hrest$.
+\item Some weakening witness $\sep(R,W)$ has denotation $\sigma_s$.
+\item No closed context tells $\pfx{M}{s}$ from some $\sep^{\circ}(R,W)$.
+\end{enumerate}
+Two prefixes no closed context tells apart have the same certificates.
+\end{theorem}}
+
+\newcommand{\stmtComposite}{%
+\begin{proposition}[the composite temporary]\label{prop:composite}
+Let $M$ have temporaries $t_1,\ldots,t_n$, each dropped once on the
+chosen record, and let $\Phi$ be its final state map on that record.
+For clause (1), assume that the tail after the drop of $t_k$ is
+injective on the span of the row vectors
+$(\bra{e_i}\otimes I)\sigma_s(x)$, as $i$ and $x$ vary. This holds if
+that tail contains no lifts. For a lift, the condition says that its
+projection kills no nonzero vector in the relevant span.
+Call $t_k$ \emph{separately
+constant} when $\Phi(x)$ lies in $g_k \otimes (\text{the other factors})$ for
+one unit $g_k \in \Hilb_{t_k}$ and every input $x$.
+\begin{enumerate}
+\item The site of $\drop\,t_k$ is safe if and only if $t_k$ is separately
+  constant.
+\item Every $t_k$ is separately constant if and only if the composite site
+  $\drop\,(t_1, \ldots, t_n)$, placed at the end after deleting the
+  individual drops, is safe with
+  a certificate carrying the product $g_1 \otimes \cdots \otimes g_n$.
+\end{enumerate}
+\end{proposition}}
+
+\newcommand{\stmtPhase}{%
+\begin{lemma}[equal answers, proportional maps]\label{lem:phase}
+Let two prefixes with every $\drop$ deleted have the same context and type,
+so that their denotations $\sigma, \sigma' : \den{\Omega} \to \Hilb$ are
+linear maps into one space. If no closed context tells them apart, then
+$\sigma' = c\,\sigma$ for a scalar $c$, of modulus one once $\sigma \neq 0$.
+Conversely, no closed context tells apart two prefixes with
+$\sigma' = c\,\sigma$ and $|c| = 1$.
+\end{lemma}}
+
+\newcommand{\stmtReuse}{%
+\begin{proposition}[reclaiming temporaries]\label{prop:reuse}
+In the Setting above, define
+\[
+ R^{\psi}=\begin{cases}
+ I,&w=0,\\
+ I-2ww^{\dagger}/\lVert w\rVert^2,&w\ne0.
+ \end{cases}
+\]
+\begin{enumerate}
+\item \emph{Exchange.} $R^{\psi}$ is the unique linear map that exchanges
+$\tilde g$ and $\psi$ and fixes their common orthogonal complement.
+It is a unitary involution.
+\item \emph{No gate needed.} $R^{\psi}=I$ exactly when $\tilde g=\psi$,
+equivalently when $g$ lies on the allocation ray.
+\item \emph{Restoration.} At every input, applying $R^{\psi}$ to the
+block puts it in $\psi$ and leaves the reduced state of the rest unchanged.
+\end{enumerate}
+\end{proposition}
+A dropped block may contain both loans and temporaries. A loan must be
+returned in the state the caller supplied; a temporary must be returned
+to its declared allocation state.
+
+At a safe site, the block factor
+$B:\Hloan\to\Hv$ of \cref{def:site}(4) describes where the program has
+put the loans' information. For a loan input $\ell$, the block contains
+$B\ell$. Let $J$ describe the desired result: $J\ell$ places the unchanged
+loans beside the temporaries in their allocation state $\psi$.
+If loans precede temporaries in the tuple, $J\ell=\ell\otimes\psi$;
+otherwise these factors are placed in the tuple's order.
+
+\begin{proposition}[returning loans]\label{prop:loanreturn}
+For the safe block above, there is a unitary $T$ on the block such that
+\[
+                    T(B\ell)=J\ell\qquad\text{for every loan input }\ell.
+\]
+Thus the same gate restores every possible loan state and every
+temporary's allocation state. It also preserves the loans' correlations
+with registers kept by the caller.
+
+Only the action of $T$ on the image of $B$ is prescribed. Different
+unitaries may extend that action to the rest of the block space.
+If the block contains only loans, $B$ is square and unitary:
+$J=I$ and $T=B^{\dagger}$. In this case $T$ is the identity up to phase
+exactly when $B$ is.
+\end{proposition}}
+
+\newcommand{\stmtReuseSound}{%
+\begin{proposition}[reuse is sound]\label{prop:reusesound}
+Extend the machine of \cref{fig:machine} with a pool: at a safe site,
+\textsc{Step-Drop-Reclaim} applies $R^{s}$ to the block and moves its
+registers to the pool instead of hiding them (loans are returned by the gate of \cref{prop:loanreturn}
+and are never pooled);
+\textsc{Step-New-Reuse} serves
+a \texttt{new } $t : [d] \mathbin{@} \psi$ from a pooled register standing in $\psi$
+instead of allocating a fresh one.
+\begin{enumerate}
+\item Every run of the pooled machine is simulated by a run of the machine of
+  \cref{fig:machine}: the same records, the same weight at every input, and
+  the same reduced state on the returned registers, on every record.
+\item The pooled machine allocates at most as many registers, and strictly
+  fewer whenever a reclaimed register is served.
+\item If reclamation is allowed at an unsafe site, reuse can be unsound. Extend program (b) by
+  allocating a fresh qubit and returning it with $v$. If that allocation
+  instead reuses the dropped block, no gate on the block alone makes the
+  returned joint state agree at every input.
+\end{enumerate}
+\end{proposition}}
+
+\newcommand{\stmtTypeSafetyLift}{%
+\begin{theorem}[type safety, with the two forms]\label{thm:typesafetylift}
+\Cref{thm:typesafety} holds of the five-rule machine, with two clauses
+read again and two unchanged.
+\begin{enumerate}[beginpenalty=10000]
+\item \emph{Progress} now reads: a well-typed configuration is final, or
+  exactly one rule applies to it, and at \textsc{Step-Lift} both of that rule's
+  labelled instances do --- a lift being the only labelled step.
+\item \emph{Termination} now reads along the branch taken: the run whose
+  record is $o$ reaches a final configuration in at most as many steps as that branch
+  has statements, an \texttt{if} counting as one, and so in at most $|M|$.
+\item \emph{Preservation} stands word for word, and so does the
+  hidden-register invariant of \cref{sec:lang:dynamics}: a lift binds its parameter
+  and leaves its register live under its own name, so no register enters or leaves
+  the context there.
+\item \emph{Adequacy} stands with the run read along its record: the run
+  from $\langle \Omega, x \parallel M\rangle$ whose record is $o$ ends in the state
+  $E_o(M)\,x$.
+\end{enumerate}
+\end{theorem}}
+
+\newcommand{\stmtBlockLift}{%
+\begin{remark}[a block lift is a derived form]\label{rem:blocklift}
+Let $S\subseteq[d]$ be nonempty and proper. Define the indicator gate
+\[
+ U_S=\sum_{j\in S}\proj j\otimes X+
+     \sum_{j\notin S}\proj j\otimes I.
+\]
+It leaves $x$'s level unchanged and flips a fresh qubit $a$ exactly when
+that level belongs to $S$. In a signature containing $U_S$, replace
+$p=\lift_S\,x\texttt{;}\ M$ by these steps:
+\begin{enumerate}
+\item Allocate $a$ in $\ket0$ and apply $U_S$ to $(x,a)$.
+\item Set $p=\lift_{\{1\}}\,a$. Thus $p=1$ has the same meaning as in
+      the original test: the level of $x$ belongs to $S$.
+\item Drop $a$ and continue with $M$.
+\end{enumerate}
+To check the replacement, write the incoming state as
+$\sigma=\sum_j\ket j_x\otimes\sigma_j$ and put
+$\tau_1=\sum_{j\in S}\ket j\otimes\sigma_j$ and
+$\tau_0=\sum_{j\notin S}\ket j\otimes\sigma_j$.
+Step (1) gives $\tau_1\otimes\ket1_a+\tau_0\otimes\ket0_a$.
+On outcome $b$, step (2) keeps
+$\tau_b\otimes\ket b_a=((P_S^b)_x\sigma)\otimes\ket b_a$.
+This is the original branch state with one extra, fixed factor.
+The replacement therefore has the same type and per-record map after
+omitting that factor. Its drop of $a$ is safe, and $X^b$ restores $a$
+to $\ket0$ (\cref{prop:reuse}).
+\end{remark}}
+
+\newcommand{\stmtReuseRecord}{%
+\begin{proposition}[the record chooses the reclaiming gate]\label{prop:reuserecord}
+Let $s$ fire on record $o$ with $\sigma_s^o\ne0$, safe there with certificate
+$[g_o]$ and block allocated in $\psi$, and let $R_o$ be the reclaiming gate
+of \cref{prop:reuse} for that certificate.
+\begin{enumerate}
+\item $g_o$ and $R_o$ depend on $o$ only through the bits $o$ takes at the
+  lifts that fire before $s$: two records agreeing on those have the same
+  certificate and the same reclaiming gate.
+\item One gate cannot serve all records: some well-typed $M$ has a
+  site whose reclaiming gate is $I$ on one record and $X$ on the other,
+  whether or not an \texttt{if} of $M$ reads the bit that decides.
+\end{enumerate}
+\end{proposition}}
+
+\newcommand{\stmtCompileLeaf}{%
+\begin{theorem}[compilation, one record at a time]\label{thm:compileleaf}
+Let $M$ be in the compilation fragment, with every lifted register of
+power-of-two dimension. Fix a record $o$. List the safe sites that fire
+on this record as $s_1,\ldots,s_r$, in execution order. Assume that each
+site's certificate or loan block factor is emittable, and write
+$R_o^{s_j}$ for its ideal reclaiming gate.
+
+Let $C_o$ be the corresponding branch map of the emitted circuit.
+When comparing maps, omit any additional indicator qubits that the
+emitter returns to $\ket0$. Order the remaining hidden factors by site
+and drop-tuple order, as in \cref{thm:compile}. Then:
+\begin{enumerate}
+\item The compiled branch is the source branch followed by the chosen
+  reclaiming gates:
+  \[
+  C_o=z_o\bigl(R_o^{s_1}\otimes\cdots\otimes R_o^{s_r}\otimes\id\bigr)E_o(M),
+  \qquad |z_o|=1.
+  \]
+  The phase $z_o$ is independent of every input, including loan states.
+\item The branch weight and the reduced output state agree with those
+  of $E_o(M)$ for every input. If no gate is emitted, the entire
+  branch maps agree up to $z_o$.
+\item Each reclaimed temporary is in its declared allocation state,
+  and each reclaimed loan is in its original state. The phase in
+  clause (1) changes neither of these states.
+\end{enumerate}
+\end{theorem}}
+
+\newcommand{\stmtRecordWitness}{%
+\begin{theorem}[the criterion, one record at a time]\label{thm:perrecord}
+Let $s$ be a site of $M$ whose block is a tuple of temporaries allocated in
+the unit state $\psi$, and $o$ a record on which $s$ fires. The following are equivalent.
+\begin{enumerate}
+\item $s$ is safe on $o$.
+\item $\sigma^{o}_s = g \otimes W_o$ for a unit $g \in \Hv$ and a contraction
+  $W_o : \den{\Omega} \to \Hrest$.
+\item A witness has map $\sigma_s^o$ on its \emph{kept record},
+where its fresh qubit $a$ reads $0$, after omitting that fixed
+$\ket0_a$ factor. The witness performs three steps:
+prepare the block in $\psi$ and apply one gate $R$ to it;
+allocate the other temporaries and $a$ in $\ket{0}$ and apply one gate $U$
+to everything except the block; then lift $a$ against $\{0\}$.
+\item No closed context, and already no lift-free one, tells $\pfx{M}{s}$ on
+  $o$ from some such program on its kept record.
+\end{enumerate}
+\end{theorem}}
+
+\newcommand{\stmtObsInvRecord}{%
+\begin{corollary}[safety is an observational invariant, one record at a time]
+\label{cor:obsinvrecord}
+Fix a record $o$ and let two prefixes with every $\drop$ deleted have the
+same context and type, and let no lift-free closed context tell them apart on $o$. Then
+${\sigma'}^{o} = c\,\sigma^{o}$ for a scalar $c$, of modulus one once
+$\sigma^{o} \ne 0$; hence their sites are both safe or both unsafe on $o$, and every
+certificate of one is a certificate of the other.
+\end{corollary}}
+
+\newcommand{\stmtNoTextQubit}{%
+\begin{theorem}[the verdict is record-dependent]\label{thm:notext}
+Let $c$ be program (c) of \cref{sec:meas:programs}.
+\begin{enumerate}
+\item $c$ is well typed, and its two records are both reachable, each of
+  weight $\tfrac12$ at every basis input.
+\item Under the record taking $1$ at the lift, the temporary landed
+  in $\{0\}$, and the site map is
+  $\sigma_{\mathrm{in}}(x) = \tfrac{x_0 + x_1}{\sqrt2}\,\ket{0} \otimes \ket{0}$,
+  and the drop is safe, with certificate $\ket{0}$.
+\item Under the record taking $0$ the site map is
+  $\sigma_{\mathrm{out}}(x) = \tfrac{x_0 - x_1}{2}\,(\ket{0} \otimes \ket{1}
+   + \ket{1} \otimes \ket{0})$,
+  and the drop is unsafe.
+\end{enumerate}
+\end{theorem}}
+
+\newcommand{\stmtRelativisedSite}{%
+\begin{theorem}[the criterion over a gate ring]\label{thm:relativised}
+Let $\mathcal A$ be a gate ring, $M$ a measurement-free program over
+$\mathcal A$, and $s$ a site of $M$ whose block is a tuple of temporaries
+allocated in $\psi \in \mathcal A^{d}$.
+\begin{enumerate}
+\item If some weakening witness $\sep(R,W)$ with $R$ over $\mathcal A$ has
+  denotation $\sigma_s$, then $s$ is safe with a certificate carrying the unit
+  vector $R\psi$ over $\mathcal A$, whatever $W$ is.
+\item If $\mathcal A$ has a column lemma (\cref{fact:column}) and $s$ is safe
+  with a certificate carrying a unit vector over $\mathcal A$, then some
+  weakening witness \emph{over $\mathcal A$} has denotation $\sigma_s$.
+\end{enumerate}
+\end{theorem}}
+
+\newcommand{\stmtClassicalCostSite}{%
+\begin{theorem}[the classical price]\label{thm:classicalcost}
+Deciding whether a given site whose block contains no loans is safe on a
+given record is coNP-complete, for programs whose gates are drawn from $\{X, \mathrm{CNOT},
+\mathrm{Toffoli}\}$ on qubit registers and whose allocations are clean.
+Hardness holds already for measurement-free programs with one site.
+\end{theorem}}

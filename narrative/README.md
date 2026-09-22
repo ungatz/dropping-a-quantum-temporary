@@ -1,28 +1,23 @@
 # The paper
 
-`full.tex` is the paper; `supplement.tex` holds the proofs it defers, as a
-separate PDF. Statements used by both live in `statements.tex`, so the two
-cannot drift apart. `preamble.tex` holds the machinery.
+`full.tex` is the paper. Its theorem statements live in `statements.tex` and
+its machinery in `preamble.tex`; `refs.bib` is the bibliography. Figures are
+drawn standalone in `figures/` and included as PDFs, because tikz is not on
+ACM's production list.
 
 ```
-make            full.pdf and supplement.pdf, in build/
+make            build/full.pdf
 make figures    figures/*.tex -> PDF
 ```
 
-Sections 1--5 are programs with no measurement in them: the calculus, what a
-drop is, exactly when it is safe, and what it costs to decide. Section 6 adds
-measurement, where a measured outcome can be read back into the program.
-Sections 7--9 -- where a verdict fixed before the run stops working, the
-runtime check that repairs it, and several temporaries at once -- are outlines
-in this draft rather than write-ups, and two subsections earlier are as well.
-Sections 10--12 are the artifact, the related work, and what is open.
+The introduction and the section after it ask the question on three small
+programs. The language comes next: syntax, statics, the five-rule machine,
+type safety, and the compiler to OpenQASM 3. Then the criterion -- when a drop
+is safe, and the single gate that reclaims the block -- and then measurement,
+where the verdict is per record. The last four sections are the gate ring, the
+price of deciding, the implementation and the related work. The proofs are
+appendices A to D, after the bibliography.
 
-Three markers say what is settled, each a coloured rule down the left margin.
-*In revision* means the prose is being reworked. *Planned* names a result that
-belongs there and is not written yet, and says what question it will answer;
-nothing inside such a block is claimed. *Outline* is a summary standing in for
-a section, not an argument.
-
-A `\cref` from the paper into the supplement does not resolve — say "the
-supplement, Appendix A" instead. Figures are drawn standalone in `figures/`
-and included as PDFs, because tikz is not on ACM's production list.
+An amber rule and *Planned* mark a result that belongs where it stands and is
+not written yet. The block says which question it will answer; nothing inside
+one is claimed.

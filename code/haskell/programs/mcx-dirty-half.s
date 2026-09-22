@@ -1,13 +1,11 @@
 -- mcx-dirty-half.s: mcx-dirty.s with the fourth Toffoli deleted, so the
--- ancilla is left holding q1 AND q2.
+-- loan is left holding q1 AND q2.
 --
--- Expected: drop a is REFUSED.
+-- Site: drop a (depth 0).  Expected: UNSAFE (the loan is not handed back).
 
-vis q1:2, q2:2, q3:2, q:2;
-
-newdirty a:2 @ (1,0);       -- the loan: a arrives on |0>
-gate CCX q3 a q;            -- Toffoli(q3, a; q)
-gate CCX q1 q2 a;           -- Toffoli(q1, q2; a)
-gate CCX q3 a q;            -- Toffoli(q3, a; q)
--- (the fourth Toffoli is deleted: the ancilla is not uncomputed)
-drop a;                     -- hand the loan back
+prog mcx3_half (q1 : [2], q2 : [2], q3 : [2], q : [2], loan a : [2]) : [2] * [2] * [2] * [2] {
+    CCX q3 a q;  CCX q1 q2 a;  CCX q3 a q;
+    -- (the fourth Toffoli is deleted: the loan is not uncomputed)
+    drop a;
+    return (q1, q2, q3, q)
+}

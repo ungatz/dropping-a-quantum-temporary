@@ -1,4 +1,4 @@
-// Spread and park, the first of three introductory programs: allocate
+// Spread and park, the first of the paper's three opening programs: allocate
 // |0>, apply one Hadamard, discard.  The temporary parks on |+> and the
 // denotation factors, so the criterion of this work admits the drop; Silq's
 // automatic forget inspects the producer instead, and H is not qfree.

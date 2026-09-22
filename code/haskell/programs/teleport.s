@@ -1,21 +1,18 @@
--- teleport.s: teleportation of |+> = H|0> onto visible wire b; two lifts,
--- classically controlled corrections, two drops.
+-- teleport.s: teleportation of |+> = H|0> onto the input wire b, which the caller
+-- supplies in |0>; two lifts,
+-- classically controlled corrections, two drops.  Token-identical to the
+-- listing in the measurement section's two programs.
 --
--- Expected: drops m and a at depth 2 are ADMISSIBLE at all four selections,
--- parked on definite basis lines.
+-- Sites: drop m and drop a (depth 2).  Expected: SAFE at all four records,
+-- each on a definite basis line -- (1,0) or (0,1) by record.
 
-vis b:2;
-
-new m:2;
-gate H m;               -- the message |+>
-new a:2;
-gate H a;
-gate CX a b;            -- Bell pair on (a, b)
-gate CX m a;
-gate H m;
-lift z = meas m in {0};
-lift w = meas a in {0};
-if w { } else { gate X b; }
-if z { } else { gate Z b; }
-drop m;
-drop a;
+prog teleport (b : [2]) : [2] {
+    new m : [2] @ |0>;  H m;
+    new a : [2] @ |0>;  H a;  CX a b;
+    CX m a;  H m;
+    z = lift[{0}] m;  w = lift[{0}] a;
+    if w {} else { X b; }
+    if z {} else { Z b; }
+    drop m;  drop a;
+    return b
+}

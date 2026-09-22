@@ -1,15 +1,15 @@
--- grover.s: one Grover iteration on two visible qubits, oracle ancilla,
+-- grover.s: one Grover iteration on two input qubits, an oracle temporary,
 -- compute/phase/uncompute; Diff is the exact 2|s><s| - I.
 --
--- Expected: drop t at depth 0 is ADMISSIBLE, parked on the basis line [|0>].
+-- Site: drop t (depth 0).  Expected: SAFE, certificate the basis line (1,0).
 
-vis x1:2, x2:2;
-
-gate H x1;
-gate H x2;
-new t:2;
-gate CCX x1 x2 t;       -- compute the mark into t
-gate Z t;               -- phase
-gate CCX x1 x2 t;       -- uncompute
-drop t;
-gate Diff x1 x2;
+prog grover (x1 : [2], x2 : [2]) : [2] * [2] {
+    H x1;  H x2;
+    new t : [2] @ |0>;
+    CCX x1 x2 t;             -- compute the mark into t
+    Z t;                     -- phase
+    CCX x1 x2 t;             -- uncompute
+    drop t;
+    Diff x1 x2;
+    return (x1, x2)
+}

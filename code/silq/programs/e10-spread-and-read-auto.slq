@@ -1,4 +1,4 @@
-// Spread and read, the second of three introductory programs, with the
+// Spread and read, the second of the paper's three opening programs, with the
 // automatic forget: allocate |0>, apply a Hadamard, let the temporary control
 // an X on the visible register, then discard it.  The two are entangled and
 // the criterion of this work refuses the drop.  The question here is what the

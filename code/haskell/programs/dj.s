@@ -1,15 +1,13 @@
--- dj.s: Deutsch-Jozsa on one visible qubit, |-> ancilla, oracle f(x) = x
--- as CX with control x and target t.
+-- dj.s: Deutsch-Jozsa on one input qubit, |-> temporary, oracle f(x) = x as
+-- CX with control x and target t.  Token-identical to the listing in
+-- the syntax subsection of the paper.
 --
--- Expected: drop t at depth 0 is ADMISSIBLE, parked on the line [|->].
+-- Site: drop t (depth 0).  Expected: SAFE, certificate the line (1,-1).
 
-vis x:2;
-
-new t:2;
-gate X t;               -- t := |1>
-gate H t;               -- t := |->
-gate H x;
-gate CX x t;            -- the oracle for f(x) = x
-gate H x;
-drop t;
-lift r = meas x in {0};
+prog dj (x : [2]) : [2] {
+    new t : [2] @ |0>;
+    X t;  H t;               -- t := |->
+    H x;  CX x t;  H x;      -- the oracle
+    drop t;
+    return x
+}

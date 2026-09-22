@@ -1,15 +1,15 @@
 dist-newstyle/
-.lake/
+__pycache__/
 *.hi
 *.o
 .DS_Store
 
-# latex build products.  The figures are drawn standalone and `make` redraws
-# them, so only their sources are kept; full.pdf and supplement.pdf at
-# narrative/ are committed on purpose, so that the paper can be read without
-# a TeX installation.
+# LaTeX build products. The figures are drawn standalone and `make` redraws
+# them, so only their sources are kept; narrative/full.pdf is committed on
+# purpose, so that the paper can be read without a TeX installation.
 narrative/build/
 narrative/figures/*.pdf
+!narrative/figures/barenco-original.pdf
 narrative/figures/*.aux
 narrative/figures/*.log
 narrative/figures/*.fls

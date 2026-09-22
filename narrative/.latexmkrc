@@ -1,14 +1,14 @@
-# latexmk configuration. Everything generated goes to build/.
-#
-# pdflatex + bibtex: acmart's ACM-Reference-Format.bst is a BibTeX style.
-$pdf_mode = 1;
+# Everything latexmk generates goes to build/.
+$pdf_mode = 4;            # lualatex
 $bibtex_use = 2;          # run bibtex, and clean the .bbl
-$pdflatex = 'pdflatex -file-line-error -halt-on-error -interaction=nonstopmode %O %S';
+$lualatex = 'lualatex -file-line-error -halt-on-error -interaction=nonstopmode %O %S';
 $max_repeat = 6;
 
-# Keep the tree readable: everything latexmk generates goes in build/.
+# preamble.tex and statements.tex are \input fragments, not documents: without
+# this a bare `latexmk` in this directory tries to typeset them and fails.
+@default_files = ('full.tex');
+
 $out_dir = 'build';
 $aux_dir = 'build';
 
-# `make clean` removes these too, but latexmk -C should get them all.
 $clean_ext = 'bbl blg fdb_latexmk fls run.xml synctex.gz';

@@ -1,0 +1,36 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+\begin{document}
+\begin{tikzpicture}[house]
+\node[anchor=west,font=\small\bfseries] at (0,.65) {(a) General temporary reclaim};
+\node[anchor=east] at (.7,0) {$\tilde g$};
+\draw[ink] (.8,0)--(10.2,0);
+\draw[ink] (1.15,-.12)--(1.32,.12);
+\node[lbldim,above] at (1.23,.1) {$k$ qubits};
+\node[box,fill=white,minimum width=13mm] at (2.7,0) {$V$};
+\node[boxhi,minimum width=29mm] at (5.4,0) {$I-2|0^k\rangle\langle0^k|$};
+\node[box,fill=white,minimum width=13mm] at (8.1,0) {$V^{\dagger}$};
+\node[anchor=west] at (10.2,0) {$\psi$};
+\node[align=center] at (5.4,-.7) {$u=(\psi-\tilde g)/\|\psi-\tilde g\|,\quad Vu=|0^k\rangle$};
+\node[anchor=west,font=\small\bfseries] at (0,-1.5) {(b) Bell certificate: five gates return $(|00\rangle+|11\rangle)/\sqrt2$ to $|00\rangle$};
+\foreach \y/\name in {-2.25/t_1,-3.1/t_2} {
+ \node[anchor=east] at (.7,\y) {$\name$};
+ \draw[ink] (.8,\y)--(10.2,\y);
+ \node[anchor=west] at (10.2,\y) {$|0\rangle$};
+}
+\foreach \x in {2,8.8} {
+ \draw[ink] (\x,-2.25)--(\x,-3.1);
+ \fill[ink] (\x,-2.25) circle (1.5pt);
+ \draw[ink,fill=white] (\x,-3.1) circle (3.5pt);
+ \draw[ink] (\x,-3.25)--(\x,-2.95);
+ \draw[ink] (\x-.15,-3.1)--(\x+.15,-3.1);
+}
+\node[box,fill=white,minimum width=13mm] at (3.7,-2.25) {$A$};
+\draw[ink] (5.4,-2.25)--(5.4,-3.1);
+\node[boxhi,minimum size=6mm] at (5.4,-2.25) {$Z$};
+\draw[ink,fill=white] (5.4,-3.1) circle (2pt);
+\node[box,fill=white,minimum width=13mm] at (7.1,-2.25) {$A^{\dagger}$};
+\node[lbldim] at (5.4,-3.65) {open control: apply $Z$ when $t_2=0$};
+\node at (5.4,-4.5) {$A=U(\pi/4,0,-\pi)=\begin{pmatrix}\cos(\pi/8)&\sin(\pi/8)\\\sin(\pi/8)&-\cos(\pi/8)\end{pmatrix}$};
+\end{tikzpicture}
+\end{document}

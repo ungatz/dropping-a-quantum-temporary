@@ -1,21 +1,19 @@
 cabal-version:      2.4
 name:               dqt
 version:            0.1.0
-synopsis:           The affine drop calculus, its checker, and the drop criterion
+synopsis:           A typed language for quantum temporaries, its checker, and the drop criterion
 description:
-  A self-contained implementation of the language studied in
-  /Dropping a Quantum Temporary/: the measurement-free affine calculus, its
-  type checker, its two semantics, the drop criterion by two independent
-  routes, the constructive witness synthesiser that realises the right-to-left
-  direction of the criterion as source text, the client that realises the
-  contextual reading, the bundling elaboration that carries many temporaries
-  into the one-temporary core, and the lifted calculus with dynamic lifting
-  together with the runtime check.
+  A self-contained implementation of the language of /Safe to Drop: an Exact
+  Criterion for Quantum Temporaries/: the typed surface language with its
+  checker and five-rule machine, its elaboration to the flat command list, its
+  compiler to OpenQASM 3, and the drop criterion by two independent routes.
   .
-  The package holds two implementations of one criterion.  The theory layer
-  builds the core map as a matrix and takes an exact rank; the surface
-  language never builds it, and probes instead.  DQT.Bridge runs them against
-  each other.
+  The package decides one question by two different algorithms.  The theory
+  layer builds the site map as a matrix over Q(zeta_8), forms its Kraus blocks
+  and its Gram matrix, and takes an exact rank; the language layer never builds
+  the matrix, and probes instead.  Drop.Bridge runs the two against each other.
+  They share the scalar field, so what the comparison holds fixed is the
+  arithmetic and what it varies is the algorithm.
   .
   Exact arithmetic throughout, and a check that asserts no inexact numeric
   type occurs anywhere in the sources.  Reading order is in README.md.
@@ -27,10 +25,11 @@ category:           Language
 build-type:         Simple
 extra-doc-files:    README.md
                     programs/SYNTAX.md
--- The check suite reads the corpus at run time (S.Test.Parser reads
+-- The check suite reads the corpus at run time (Drop.Lang.Checks.Parser reads
 -- programs/*.s), so a source distribution that omitted these would build and
 -- then fail its own tests.
 extra-source-files: programs/*.s
+                    test/fixtures/*.s
 
 common lang
     default-language: GHC2021
@@ -42,65 +41,65 @@ common lang
 library
     import:           lang
     hs-source-dirs:   src
-    exposed-modules:  DQT
-                      DQT.Algebra.Linear
-                      DQT.Algebra.Scalar
-                      DQT.Bridge
-                      DQT.Calculus.Elaborate
-                      DQT.Calculus.Gates
-                      DQT.Calculus.Machine
-                      DQT.Calculus.Metatheory
-                      DQT.Calculus.Syntax
-                      DQT.Calculus.Typing
-                      DQT.Corpus.Classical
-                      DQT.Corpus.Examples
-                      DQT.Corpus.Producer
-                      DQT.Corpus.Isolable
-                      DQT.Criterion
-                      DQT.Criterion.Context
-                      DQT.Criterion.Gram
-                      DQT.Criterion.Split
-                      DQT.Criterion.Witness
-                      DQT.Lifted
-                      DQT.Lifted.Programs
-                      DQT.Many.Multi
-                      DQT.Many.Nested
-                      DQT.Many.Release
-                      DQT.Pretty
-                      DQT.Report
-                      DQT.Residual
-                      S.Lang.Cyclo
-                      S.Lang.Gates
-                      S.Lang.Interp
-                      S.Lang.Parser
-                      S.Lang.QState
-                      S.Lang.Ring
-                      S.Lang.Syntax
-                      S.Pass
-                      S.Pass.Cut
-                      S.Pass.Decide
-                      S.Pass.Park
-                      S.Pass.Resolve
-                      S.Programs.BV
-                      S.Programs.DJ
-                      S.Programs.Grover
-                      S.Programs.QFT
-                      S.Programs.QPE
-                      S.Programs.RUS
-                      S.Programs.Shor
-                      S.Programs.Simon
-                      S.Programs.Superdense
-                      S.Programs.Teleport
-                      S.Programs.TempAnd
-                      S.Programs.Tilt
-                      S.Report.Explain
-                      S.Report.Run
-                      S.Report.Trace
-                      S.Suite
-                      S.Test.Exhaustive
-                      S.Test.Parser
-                      S.Test.Pass
-    build-depends:    base >=4.14 && <5
+    exposed-modules:  Drop.Theory.Algebra.Linear
+                      Drop.Theory.Algebra.Scalar
+                      Drop.Bridge
+                      Drop.Theory.Program.Elaborate
+                      Drop.Theory.Program.Gates
+                      Drop.Theory.Program.Machine
+                      Drop.Theory.Program.Syntax
+                      Drop.Theory.Program.Typing
+                      Drop.Theory.Corpus.Classical
+                      Drop.Theory.Corpus.Examples
+                      Drop.Theory.Criterion
+                      Drop.Theory.Criterion.Context
+                      Drop.Theory.Criterion.Gram
+                      Drop.Theory.Criterion.Split
+                      Drop.Theory.Criterion.Witness
+                      Drop.Theory.Lifted
+                      Drop.Theory.Lifted.Programs
+                      Drop.Theory.Many.Multi
+                      Drop.Theory.Many.Nested
+                      Drop.Theory.Pretty
+                      Drop.Theory.Report
+                      Drop.Theory.Residual
+                      Drop.Lang.Cyclo
+                      Drop.Lang.Gates
+                      Drop.Lang.Check
+                      Drop.Lang.Compile
+                      Drop.Lang.Elab
+                      Drop.Lang.Interp
+                      Drop.Lang.Machine
+                      Drop.Lang.Parser
+                      Drop.Lang.QState
+                      Drop.Lang.Ring
+                      Drop.Lang.Syntax
+                      Drop.Lang.Typed
+                      Drop.Lang.Pass
+                      Drop.Lang.Pass.Cut
+                      Drop.Lang.Pass.Decide
+                      Drop.Lang.Pass.Park
+                      Drop.Lang.Pass.Resolve
+                      Drop.Lang.Programs.BV
+                      Drop.Lang.Programs.DJ
+                      Drop.Lang.Programs.Grover
+                      Drop.Lang.Programs.QFT
+                      Drop.Lang.Programs.QPE
+                      Drop.Lang.Programs.RUS
+                      Drop.Lang.Programs.Shor
+                      Drop.Lang.Programs.Simon
+                      Drop.Lang.Programs.Superdense
+                      Drop.Lang.Programs.Teleport
+                      Drop.Lang.Programs.TempAnd
+                      Drop.Lang.Programs.Tilt
+                      Drop.Lang.Report.Explain
+                      Drop.Lang.Report.Run
+                      Drop.Lang.Report.Trace
+                      Drop.Lang.Suite
+                      Drop.Lang.Checks.Exhaustive
+                      Drop.Lang.Checks.Parser
+                      Drop.Lang.Checks.Pass
+    build-depends:    base >=4.14 && <5, containers >=0.6 && <0.9
 
 executable dqt
     import:           lang
@@ -117,3 +116,25 @@ test-suite dqt-test
     -- directory as a failed check rather than dying with an exception: a
     -- renamed directory must turn a check red, never crash the suite.
     build-depends:    base, directory, dqt
+
+-- The typed surface language: syntax, statics and the five-rule machine,
+-- checked against the flat many-register engine through Drop.Lang.Elab. Its own
+-- stanza, so it can be run alone.
+test-suite dqt-typed-test
+    import:           lang
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          TypedSpec.hs
+    -- containers: task (f)'s trace-preservation check (Sigma_o E_o^dagger
+    -- E_o = I) keys each record's leaf amplitude by (basis index, record)
+    -- in a Data.Map.Strict.
+    build-depends:    base, containers, dqt
+
+-- Drop.Lang.Compile: OpenQASM 3 compilation of the typed surface language. Its
+-- own stanza, so it can be run alone; it writes ../qasm3/out-typed/.
+test-suite dqt-compile-test
+    import:           lang
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          CompileSpec.hs
+    build-depends:    base, containers, directory, dqt

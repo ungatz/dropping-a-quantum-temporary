@@ -1,0 +1,19 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+\begin{document}
+\begin{tikzpicture}[house]
+\node[box] (root) at (0,0) {program (c): lift $t$ against $\{0\}$};
+\node[boxhi,minimum width=34mm] (s1) at (-3,-1.75) {apply $V$; drop $t$\\$\sigma_s^1$: safe};
+\node[box,minimum width=34mm] (s0) at (3,-1.75) {apply $V$; drop $t$\\$\sigma_s^0$: unsafe};
+\draw[flow] (root.south)--node[midway,lbl,fill=white,inner xsep=3pt,inner ysep=2pt] {$p=1$}(s1.north);
+\draw[flow] (root.south)--node[midway,lbl,fill=white,inner xsep=3pt,inner ysep=2pt] {$p=0$}(s0.north);
+\node[boxdim] (a) at (-4.25,-3.5) {$b=1$: zero map};
+\node[box] (b) at (-1.7,-3.5) {$b=0$: reachable};
+\node[boxdim] (c) at (1.7,-3.5) {$b=1$: zero map};
+\node[box] (d) at (4.25,-3.5) {$b=0$: reachable};
+\draw[flowdim] (s1.south)--(a.north);
+\draw[flow] (s1.south)--(b.north);
+\draw[flowdim] (s0.south)--(c.north);
+\draw[flow] (s0.south)--(d.north);
+\end{tikzpicture}
+\end{document}

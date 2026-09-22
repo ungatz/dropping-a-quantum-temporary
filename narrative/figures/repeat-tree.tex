@@ -1,0 +1,20 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+\begin{document}
+\begin{tikzpicture}[house]
+\node[box] (root) at (0,0) {$|+\rangle_t\otimes x$\\before the first test};
+\node[boxhi] (left) at (-1.85,-1.65) {$|0\rangle_t\otimes x/\sqrt2$};
+\node[box] (right) at (1.85,-1.65) {$|1\rangle_t\otimes Xx/\sqrt2$};
+\draw[flow] (root.south)--node[midway,lbl,fill=white,inner sep=3pt] {$p=1$}(left.north);
+\draw[flow] (root.south)--node[midway,lbl,fill=white,inner sep=3pt] {$p=0$}(right.north);
+\node[box] (ll) at (-2.85,-3.25) {$r=1$\\same state};
+\node[boxdim] (lr) at (-.95,-3.25) {$r=0$\\zero};
+\node[boxdim] (rl) at (.95,-3.25) {$r=1$\\zero};
+\node[box] (rr) at (2.85,-3.25) {$r=0$\\same state};
+\draw[flow] (left.south)--(ll.north);
+\draw[flowdim] (left.south)--(lr.north);
+\draw[flowdim] (right.south)--(rl.north);
+\draw[flow] (right.south)--(rr.north);
+\node[lbldim] at (0,-3.95) {The second test repeats the first: $r=p$.};
+\end{tikzpicture}
+\end{document}

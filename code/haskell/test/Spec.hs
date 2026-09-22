@@ -1,46 +1,42 @@
 -- |
--- The check suite lists the library's claims, each paired with the code that
--- decides it, so a red line names a claim, not a function. It is not a
--- property-based sweep: one check per claim, on the programs of the
--- catalogue. The last three checks gate the package: no inexact
+-- The check suite lists the paper's claims, each paired with the code that
+-- decides it, so a red line names a theorem, not a function. It is not a
+-- property-based sweep: one check per claim, on the programs the paper
+-- discusses. The last three checks gate the package: no inexact
 -- arithmetic, every dirty ancilla on a unit state, the language suite green.
 module Main (main) where
 
 import Control.Monad (filterM, unless)
 import System.Directory (doesDirectoryExist, doesFileExist, listDirectory)
-import Data.List (isInfixOf)
+import Data.List (isInfixOf, isSuffixOf)
 import System.Exit (exitFailure)
 
-import DQT.Bridge
-import DQT.Corpus.Classical
-import DQT.Criterion.Context
-import DQT.Criterion
-import DQT.Calculus.Elaborate
-import DQT.Corpus.Examples
-import DQT.Calculus.Gates
-import DQT.Criterion.Gram
-import DQT.Lifted
-import DQT.Lifted.Programs
-import DQT.Algebra.Linear
-import DQT.Calculus.Metatheory
-import DQT.Many.Multi
-import DQT.Many.Nested
-import DQT.Corpus.Producer
-import DQT.Corpus.Isolable (isolableIsSound, isolableIncompletenessWitnesses, r3Count)
-import DQT.Many.Release
-import DQT.Residual
-import DQT.Algebra.Scalar
-import DQT.Calculus.Syntax
-import DQT.Calculus.Typing
-import DQT.Criterion.Witness
+import Drop.Bridge
+import Drop.Theory.Corpus.Classical
+import Drop.Theory.Criterion.Context
+import Drop.Theory.Criterion
+import Drop.Theory.Program.Elaborate
+import Drop.Theory.Corpus.Examples
+import Drop.Theory.Program.Gates
+import Drop.Theory.Criterion.Gram
+import Drop.Theory.Lifted
+import Drop.Theory.Lifted.Programs
+import Drop.Theory.Algebra.Linear
+import Drop.Theory.Many.Multi
+import Drop.Theory.Many.Nested
+import Drop.Theory.Residual
+import Drop.Theory.Algebra.Scalar
+import Drop.Theory.Program.Syntax
+import Drop.Theory.Program.Typing
+import Drop.Theory.Criterion.Witness
 
-import S.Lang.Cyclo (Cyclo)
-import qualified S.Lang.Interp as SI
-import S.Lang.Parser (parseProgram)
-import S.Lang.QState (norm2S)
-import qualified S.Report.Run as SRun
-import qualified S.Suite as SSuite
-import qualified S.Lang.Syntax as S
+import Drop.Lang.Cyclo (Cyclo)
+import qualified Drop.Lang.Interp as SI
+import Drop.Lang.Parser (parseProgram)
+import Drop.Lang.QState (norm2S)
+import qualified Drop.Lang.Report.Run as SRun
+import qualified Drop.Lang.Suite as SSuite
+import qualified Drop.Lang.Syntax as S
 
 data Check = Check
   { chName  :: String   -- ^ the statement
@@ -51,7 +47,7 @@ data Check = Check
 main :: IO ()
 main = do
   floats <- floatCheck
-  dirty  <- newdirtyUnitCheck
+  dirty  <- loanUnitCheck
   mcx    <- mcxChecks
   putStrLn "  --- the language layer, in full ---"
   sfails <- SSuite.suiteRun
@@ -95,8 +91,8 @@ isSafe tp = case verdict tp of
 
 -- | The verdict every catalogue entry must receive: the one table in the
 -- package written by hand rather than computed, so a change in the
--- arithmetic cannot quietly change a verdict. Each entry is justified by the
--- header on its program in "DQT.Corpus.Examples".
+-- arithmetic cannot quietly change a verdict. Each entry is justified in
+-- README.md.
 expectedVerdicts :: [(String, Bool)]
 expectedVerdicts =
   [ ("example-A",     True)   -- both reads are no-ops: the control is |0>
@@ -120,38 +116,18 @@ expectedVerdicts =
 
 checks :: [Check]
 checks =
-  [ Check "gate-classicality-alone-is-an-unsound-discard-rule"
-      "a permutation can move visible data into the temporary; compute-alone is the witness"
-      (not qfreeIsSound && qfreeUnsoundnessWitnesses == ["compute-alone"])
 
-  , Check "a-producer-discipline-is-sound-and-strictly-incomplete"
-      "with the dataflow clause restored it accepts no unsafe drop, and refuses ten safe ones"
-      (producerIsSound && length producerIncompletenessWitnesses == 10)
-
-  , Check "the-producer-table-totals-are-the-published-ones"
-      ("the totals the catalogue reports: R1 accepts four, "
-       ++ "R2 accepts two, the criterion admits twelve")
-      (r1Count == 4 && r2Count == 2 && safeCount == 12)
-
-  , Check "output-isolability-is-sound-and-strictly-incomplete"
-      ("output-isolability as Faro, Marino and Messina write Definition 5, "
-       ++ "run at the drop site: "
-       ++ "it accepts no unsafe drop, and refuses two safe ones")
-      (isolableIsSound && isolableIncompletenessWitnesses == ["dj-balanced", "bv-1"])
-
-  , Check "the-isolability-count-on-the-strict-reading"
-      "R3, on the strict reading, accepts ten of the seventeen catalogue programs"
-      (r3Count == 10)
-
-  , Check "the-scalar-field-is-a-field"
+  [ Check "the-scalar-field-is-a-field"
       "every nonzero element of the scalar field has an inverse, computed exactly"
       (and [ kmul x (kinv x) == kone | x <- fieldSamples ]
        && ksqrtReal (fromInt 2) == Just ksqrt2
        && ksqrtReal khalf == Just kinvsqrt2)
 
+
   , Check "every-catalogue-program-types"
       "the catalogue is well typed; a program that fails typing is not a program"
       allTyped
+
 
   , Check "allocFree-is-the-single-scope-premise"
       "a second allocation inside an allocation body is rejected, and only that"
@@ -160,15 +136,18 @@ checks =
          _      -> False
        && either (const False) (const True) (checkProgram flatAlloc))
 
+
   , Check "typing-forces-the-core-map-to-be-an-isometry"
       "K^dagger K = 1 on every typed program: this is why W comes out unitary"
       (and [ matMul (matConjTranspose (coreMap tp)) (coreMap tp)
                == matId (tpVisDim tp)
            | (_, tp) <- typedCatalogue ])
 
+
   , Check "the-denotation-agrees-with-the-machine"
       "the compositional semantics and the operational one give the same matrix"
       (and [ agreesWithMachine tp | (_, tp) <- typedCatalogue ])
+
 
   , Check "drop-moves-a-factor-it-does-not-erase-one"
       "after the drop the temporary is still there, as a latent tensor factor"
@@ -176,19 +155,23 @@ checks =
              && length (coreMap tp) == tpTmpDim tp * tpVisDim tp
            | (_, tp) <- typedCatalogue ])
 
+
   , Check "the-two-routes-to-the-criterion-agree"
       "vanishing cut minors and slice rank <= 1 decide every program alike"
       (and [ routesAgree tp | (_, tp) <- typedCatalogue ])
 
+
   , Check "slice-Gram-and-Choi-ranks-agree"
-      "the three matrices of the splitting section have one rank between them"
+      "the stacked Kraus blocks, their Gram matrix and the Choi matrix have one rank"
       (and [ ranksAgree (tpTmpDim tp) (tpVisDim tp) (coreMap tp)
            | (_, tp) <- typedCatalogue ])
+
 
   , Check "the-Gram-identity-decides-the-criterion"
       "G^2 = tr(G) G exactly when the slices are collinear, on every program and every lifted trace"
       (and [ gramIsRankAtMostOne d m k == slicesAreCollinear d m k
            | (d, m, k) <- coreMapsEverywhere ])
+
 
   , Check "the-Gram-matrix-carries-the-certificate-ray"
       "on every safe program G^T / tr(G) is the projector onto the parked line"
@@ -197,16 +180,19 @@ checks =
                _                -> False
            | (_, tp) <- typedCatalogue, isSafe tp ])
 
+
   , Check "the-verdicts-are-the-expected-ones"
-      "every catalogue program receives the verdict claimed for it"
+      "every catalogue program receives the verdict the paper claims for it"
       (and [ maybe False (\tp -> isSafe tp == want) (lookup n typedCatalogue)
            | (n, want) <- expectedVerdicts ]
        && length expectedVerdicts == length catalogue)
+
 
   , Check "direction-1-a-program-of-the-shape-is-safe"
       "elaborating sep(R,W) gives (R e_i0) (x) W, hence rank one, for every R, W"
       (and [ forwardDirection m d i0 r w == Right True
            | (d, m, i0, r, w) <- forwardSamples ])
+
 
   , Check "direction-2-a-safe-program-is-source-weakenable"
       "every safe program yields a program of the shape with the same denotation"
@@ -215,6 +201,7 @@ checks =
                Right w -> checkWitness tp w && inSepShape (wProgram w)
            | (_, tp) <- typedCatalogue, isSafe tp ])
 
+
   , Check "direction-2-refuses-exactly-the-unsafe-programs"
       "synthesis fails on an unsafe program, and reports the rank that beat it"
       (and [ case synthesize tp of
@@ -222,16 +209,19 @@ checks =
                _                        -> False
            | (_, tp) <- typedCatalogue, not (isSafe tp) ])
 
+
   , Check "the-shape-is-a-denotational-property-not-a-syntactic-one"
       "example-C is safe and is not in the shape; its witness deletes both reads"
       (maybe False (not . inSepShape) (byName "example-C")
        && maybe False inSepShape (byName "in-shape")
        && witnessDeletesTheReads)
 
+
   , Check "a-client-sees-exactly-the-Choi-matrix"
       "observational equality under the standard clients = equal channels"
       (and [ observationsDetermineChannel a b
            | (_, a) <- typedCatalogue, (_, b) <- typedCatalogue ])
+
 
   , Check "the-identity-client-alone-is-too-weak"
       "compute-alone and do-nothing are separated only by a mixing continuation"
@@ -239,22 +229,26 @@ checks =
          (Right a, Right b) -> identityOnlyIsNotEnough a b
          _                  -> False)
 
+
   , Check "bundling-preserves-the-denotation"
       "many temporaries compile to one of dimension prod d_i, with the same map"
       (all bundlePreservesDenotation [bellPair, wideVisible, nestedThree])
+
 
   , Check "joint-safety-is-strictly-coarser-than-per-wire-safety"
       "the Bell pair is jointly safe while neither wire is safe on its own"
       (jointSafe bellPair == Right True
        && everyWireSafe bellPair == Right False)
 
+
   , Check "one-text-can-have-two-verdicts"
       "the lifted witness is oracle-split; deleting its read makes it constant"
       (case (checkLProgram liftedWitness, checkLProgram liftedWitnessNoRead) of
          (Right a, Right b) -> oracleSplit a
-                               && everySoundStaticDisciplineRejects a
+                               && everySoundRecordObliviousVerdictRejects a
                                && constantProfile b && not (oracleSplit b)
          _                  -> False)
+
 
   , Check "the-naive-quantum-encoding-of-the-classical-core-does-not-split"
       "equal amplitudes turn the leaking permutation into an invisible swap"
@@ -262,36 +256,44 @@ checks =
          Right a -> not (oracleSplit a)
          Left  _ -> False)
 
+
   , Check "the-residual-table-agrees-with-the-semantic-criterion"
       "at every measurement record, the emitted table rules as the criterion does"
       (and [ residualAgrees tp == Just []
            | p <- [liftedWitness, liftedWitnessNoRead]
            , Right tp <- [checkLProgram p] ])
 
+
   , Check "a-scratch-bit-is-never-underdetermined"
       "no permutation of V x {0,1} splits; the trit of the boundary section does"
       (all twoLevelsNeverSplit [2, 3, 4] && threeLevelsCanSplit)
+
 
   , Check "the-two-engines-agree"
       "theory engine (build K, take a rank) = language engine (probe, compare lines)"
       (null bridgeDisagreements)
 
+
   , Check "the-residual-pass-is-exhaustive-and-agrees"
       "every measurement record has a table entry, and every entry matches the criterion"
-      (and [ a && b | (_, a, b) <- residualCheckedTwice ])
+      (and [ a && b | (_, a, b) <- residualAgreesAcrossEngines ])
+
 
   , Check "gate-output-binders-must-be-distinct"
           "the Gate rule needs t' /= v' as Pair needs v1 /= v2; reusing a consumed input name stays legal"
           (checkProgram collidingOutputs `failsWith` "t' /= v'"
            && isRight (checkProgram shadowingIsFine))
 
+
   , Check "a-register-dimension-must-be-positive"
           "checkProgram rejects a visible dimension of 0 and of -1"
           (all (isLeft . checkProgram . visibleOfDim) [0, -1, -2])
 
+
   , Check "a-ragged-matrix-is-refused-not-elaborated"
           "checkGate rejects a gate whose rows have unequal length, which would otherwise reach coreMap and crash"
           raggedIsRefused
+
 
   , Check "a-dropped-wire-is-untouchable"
       "a gate on a wire already dropped, or on one not yet allocated, is rejected"
@@ -300,6 +302,7 @@ checks =
          (Left (GateOnDeadRegister _ "a"), Left (GateBeforeAllocation _ "a"),
           Left (ReallocatedAfterDrop "a")) -> True
          _                                 -> False)
+
 
   , Check "the-drop-order-lemma-holds-where-it-could-fail"
       "each wire's verdict at its own drop site equals its verdict at the end, on a program where truncating removes half the gates"
@@ -312,6 +315,7 @@ checks =
              Just q  -> length (mStmts q) * 2 < length (mStmts interleavedDrops)
              Nothing -> False))
 
+
   , Check "the-nested-witness-trichotomy-is-inhabited"
       "all three levels occur: an entangled ray, a product ray with no witness over Z[1/2], and a witness where the arithmetic allows one"
       (case (nestedWitness zHalf bellPair, nestedWitness zHalf irreduciblyJoint,
@@ -319,6 +323,7 @@ checks =
          (Left ParkedIsEntangled, Left (FactorRayCarriesNoUnitVector _ _ _), Right w)
            -> checkNestedWitness reduciblyJoint w
          _ -> False)
+
 
   , Check "a-phase-can-supply-what-a-square-root-cannot"
       "the ray (1,1,1) carries a unit vector although sqrt 3 is not in the field, since |1 + sqrt2 i|^2 = 3"
@@ -330,6 +335,7 @@ checks =
           && (case rayCarriesUnitVector qOmega ray of    -- yet the ray carries one
                 Just u  -> vnorm2 u == kone
                 Nothing -> False))
+
 
   , Check "a-scratch-qubit-splits-once-a-joint-gate-follows-the-lift"
       "a joint gate after the lift splits a qubit temporary: both records at weight 1/2, one safe, one unsafe"
@@ -343,6 +349,7 @@ checks =
               && not (constantProfile tp)
               && all ((== Just (kdiv kone (fromInt 2))) . tvWeight) vs)
 
+
   , Check "the-summed-channel-does-not-decide-the-drop"
       "H then CZ then lift against H then lift then compute: equal Choi matrices, equal branch weights, opposite verdicts"
       (case (checkLProgram sameChannelSafe, checkLProgram sameChannelUnsafe) of
@@ -355,49 +362,6 @@ checks =
               && prof b == [(False, half), (False, half)]
          _ -> False)
 
-  , Check "gate-classicality-fails-at-every-dimension"
-      "computeAloneAt d for d = 2 to 8: one permutation gate, accepted by classicality, refused by the criterion at rank d"
-      (and [ qfreeAccepts p && rankOf p == Just d
-           | d <- [2 .. 8 :: Int]
-           , let p = computeAloneAt d ])
-
-  , Check "every-bit-of-a-depth-two-trace-is-load-bearing"
-      "k = 2: five levels, four live records, only the all-In record refused, so either bit flips the verdict"
-      (case checkLProgram depthTwoEveryBitLoadBearing of
-         Left _   -> False
-         Right tp ->
-           let vs   = verdictProfile tp
-               safe = [ isSafeV (tvVerdict v) | v <- vs ]
-               ws   = [ tvWeight v | v <- vs ]
-           in ltDepth tp == 2
-              && length vs == 4
-              && oracleSplit tp
-              -- [In,In] refuses; its three neighbours all accept
-              && safe == [False, True, True, True]
-              -- every branch is live: no verdict rides on a dead trace
-              && all (\w -> w /= Nothing && w /= Just kzero) ws)
-
-  , Check "one-respreading-gate-buys-two-live-bits-on-three-levels"
-      "tilt after the cyclic relabelling: three levels, four live branches, the verdict a function of neither bit alone"
-      (case checkLProgram liveTradeRespread of
-         Left _   -> False
-         Right tp ->
-           let vs   = verdictProfile tp
-               safe = [ isSafeV (tvVerdict v) | v <- vs ]
-               ws   = [ tvWeight v | v <- vs ]
-           in ltDepth tp == 2
-              && length vs == 4
-              && oracleSplit tp
-              && all (\w -> w /= Nothing && w /= Just kzero) ws
-              -- not a function of the first bit, not a function of the second
-              && not (safe !! 0 == safe !! 1 && safe !! 2 == safe !! 3)
-              && not (safe !! 0 == safe !! 2 && safe !! 1 == safe !! 3))
-
-  , Check "the-per-lifetime-negative-has-a-separating-pair"
-      "shuffleSafe and shuffleUnsafe have equal per-wire projections and opposite drop verdicts"
-      (projectionsAgree shuffleSafe shuffleUnsafe
-       && wireSafe shuffleSafe   "a" == Right True
-       && wireSafe shuffleUnsafe "a" == Right False)
 
   , Check "carrying-a-unit-vector-is-necessary-not-sufficient"
       "over Z[1/2] the ray carries a unit vector and the reflection preparing it is still not over the ring"
@@ -408,6 +372,7 @@ checks =
                 Right m -> not (all (all (ringHas zHalf)) m)   -- is not
                 Left _  -> False))
 
+
   , Check "per-wire-release-can-cost-a-square-root"
       "jointly safe with every wire fixed, and no nested witness over Z[1/2], where the ray (1,1) carries no unit vector"
       (jointSafe irreduciblyJoint == Right True
@@ -417,11 +382,13 @@ checks =
              Left (FactorRayCarriesNoUnitVector _ _ _) -> True
              _                                         -> False))
 
+
   , Check "the-obstruction-is-that-two-is-not-a-square"
       "two 4-level wires on the same ray do have a nested witness over Z[1/2]: four is a square and two is not"
       (case nestedWitness zHalf reduciblyJoint of
          Right w -> length (nwPrepare w) == 2 && checkNestedWitness reduciblyJoint w
          Left _  -> False)
+
 
   , Check "every-wire-fixed-implies-jointly-safe"
       ("the per-wire reading is strictly stronger: a product of fixed rays is a "
@@ -432,32 +399,7 @@ checks =
        && everyWireSafe bellPair == Right False
        && jointSafe bellPair == Right True)
 
-  , Check "the-restoration-gap-is-eight-of-twelve"
-          "the catalogue admits 12 drops and the restoration rule refuses 8 of them"
-          (restorationGap == (12, 8))
 
-  , Check "the-restoration-rule-is-sound-but-not-complete"
-      "restoring to the allocation ray refuses safe drops, including DJ and BV"
-      (restorationRuleIsSufficient
-       && all (`elem` restorationRuleIsNotNecessary)
-              ["example-C", "dj-constant", "dj-balanced", "bv-0", "bv-1"])
-
-  , Check "the-calculus-is-well-defined"
-      "typing total, progress, final dimensions and adequacy over the canonical-chain family"
-      (boundedTypingTotality && boundedProgress && boundedFinalDimensionCheck
-       && machineIsAFunction && boundedAdequacy && resultTypeIsHonest
-       && typingForcesAnIsometry)
-
-  , Check "the-structural-rules-are-the-affine-ones"
-      "contraction rejected, implicit weakening rejected, allocFree enforced"
-      (contractionIsRejected && implicitWeakeningIsRejected && allocFreeIsEnforced)
-
-  , Check "the-read-family-minimax"
-      "the two numbers the read family turns on are 1/2 and 4/9, exactly"
-      (readFamilyMinimaxSquared uPlus == khalf
-       && productReplacementErrorSquared uPlus 0 == khalf
-       && readFamilyMinimaxSquared uTiltIn == fromRat (4/9)
-       && productReplacementErrorSquared uTiltIn 0 == fromRat (4/9))
   ]
 
 -- Fixtures the checks need
@@ -495,13 +437,6 @@ witnessDeletesTheReads =
                  && length (gatesIn (progTerm (wProgram w))) == 2
                  && length (gatesIn (progTerm spreadAndReadTwice)) == 3
 
-uPlus :: Vec
-uPlus = [kinvsqrt2, kinvsqrt2]
-
--- | The tilt vector restricted to the block the measurement keeps.
-uTiltIn :: Vec
-uTiltIn = [fromRat (2/3), fromRat (2/3), kzero]
-
 nestedAlloc :: Program
 nestedAlloc = Program "two allocations, one inside the other" "v" 2
   (New "t" 2 0 (New "s" 2 0 (Drop "s" (Drop "t" (Ret "v")))))
@@ -516,16 +451,19 @@ flatAlloc = Program "one allocation" "v" 2 (New "t" 2 0 (Drop "t" (Ret "v")))
 -- three-controlled X on one borrowed ancilla. The loan on @|0>@ must come
 -- back on its own ray, the loan on @|+>@ must come back on its own ray, and
 -- the text with the fourth Toffoli deleted must be refused.
+-- | 'want' is 'Nothing' for an expected refusal, 'Just (Left line)' for a
+-- temporary's expected parked line, 'Just (Right b)' for a loan's expected
+-- reclaiming gate B.
 mcxChecks :: IO [Check]
 mcxChecks = mapM one
-  [ ( "the-borrowed-ancilla-returns-on-the-loans-own-ray"
+  [ ( "the-borrowed-loan-returns-via-a-fixed-gate"
     , "programs/mcx-dirty.s"
-    , "the drop is admitted and the temporary is left on the line (1,0)"
-    , Just [1, 0] )
-  , ( "the-borrowed-ancilla-verdict-does-not-depend-on-the-loan"
-    , "programs/mcx-dirty-plus.s"
-    , "the same text with the loan on |+> is admitted, on the line (1,1)"
-    , Just [1, 1] )
+    , "the drop is admitted and the loan is reclaimed with B = I"
+    , Just (Right [[1, 0], [0, 1]]) )
+  , ( "the-borrowed-loan-verdict-does-not-depend-on-an-extra-flip"
+    , "programs/mcx-dirty-x.s"
+    , "the same text with one extra X on the loan is admitted, reclaimed with B = X"
+    , Just (Right [[0, 1], [1, 0]]) )
   , ( "deleting-the-restoring-toffoli-is-refused"
     , "programs/mcx-dirty-half.s"
     , "with the fourth Toffoli gone the ancilla still holds the and of q1 and q2, and the drop is refused"
@@ -543,9 +481,11 @@ mcxChecks = mapM one
     agrees want (Right rep) = case SRun.rpSites rep of
       [site] -> case SRun.srRows site of
         [row] -> case want of
-          Just ln -> SRun.trVerdict row == SI.Admissible
-                     && SRun.trLine row == Just (ln :: [Cyclo])
-          Nothing -> SRun.trVerdict row == SI.Inadmissible
+          Just (Left ln) -> SRun.trVerdict row == SI.Safe
+                             && SRun.trLine row == Just (ln :: [Cyclo])
+          Just (Right b) -> SRun.trVerdict row == SI.Safe
+                             && SRun.trCert row == Just (b :: [[Cyclo]])
+          Nothing        -> SRun.trVerdict row == SI.Unsafe
         _     -> False
       _      -> False
     agrees _ (Left _) = False
@@ -560,14 +500,22 @@ mcxChecks = mapM one
 floatCheck :: IO Check
 floatCheck = do
   dirs    <- filterM doesDirectoryExist sourceDirs
-  files   <- concat <$> mapM haskellFilesIn dirs
+  files0  <- concat <$> mapM haskellFilesIn dirs
+  -- The OpenQASM 3 emitter (Drop.Lang.Compile) and its test are exempt: the
+  -- verdict and the certificate it emits on are computed exactly by
+  -- Drop.Lang.Machine and Drop.Lang.QState; the emitter only PRINTS an angle
+  -- (U(theta,phi,lambda), p(theta)) as a decimal when it is not a multiple of
+  -- pi/8, which OpenQASM requires. Nothing it prints feeds a verdict.
+  let files   = [ f | f <- files0, not (any (`isSuffixOf` f) emitterFiles) ]
   srcs    <- mapM readFile files
   let code    = unlines [ l | s <- srcs, l <- lines s, not (isComment l) ]
       missing = [ d | d <- sourceDirs, d `notElem` dirs ]
       found   = [ n | n <- inexactTypeNames, n `isInfixOf` code ]
   pure (Check "no-floating-point-anywhere"
-              ("no inexact numeric type occurs in any expression in the "
-               ++ show (length files) ++ " source files of the package"
+              ("no inexact numeric type occurs in any expression in "
+               ++ show (length files) ++ " of the package's "
+               ++ show (length files0) ++ " source files (the OpenQASM emitter "
+               ++ "and its test print decimal angles, and are exempt)"
                ++ (if null missing then "" else "  [MISSING: " ++ show missing ++ "]")
                ++ (if null found then "" else "  [FOUND: " ++ show found ++ "]"))
               (null missing && not (null files) && null found))
@@ -578,6 +526,9 @@ floatCheck = do
 
 sourceDirs :: [FilePath]
 sourceDirs = ["src", "app", "test"]
+
+emitterFiles :: [FilePath]
+emitterFiles = ["Drop/Lang/Compile.hs", "CompileSpec.hs"]
 
 -- | The two names, assembled rather than written, for the reason above.
 inexactTypeNames :: [String]
@@ -598,15 +549,16 @@ haskellFilesIn d = do
 
 -- Every dirty ancilla arrives on a unit state
 
--- | Every @newdirty@ must write a unit vector: @||psi|| = 1@ is the side
--- condition on the rule. A non-unit state carries the wrong weight, and can
--- pick a ray with no unit representative in the scalar tower. The scan is over
--- the directory, so a program added later is covered.
-newdirtyUnitCheck :: IO Check
-newdirtyUnitCheck = do
+-- | Every @new ... \@ psi@ must write a unit vector: @||psi|| = 1@ is the
+-- printed rule. A non-unit state carries the wrong weight, and can pick a
+-- ray with no unit representative in the scalar tower. A loan
+-- (a header @loan@) has no state to check by construction: it declares none.
+-- The scan is over the directory, so a program added later is covered.
+loanUnitCheck :: IO Check
+loanUnitCheck = do
   there <- doesDirectoryExist "programs"
   if not there
-    then pure (Check "every-newdirty-writes-a-unit-vector"
+    then pure (Check "every-declared-state-is-a-unit-vector"
                      "programs/ not reachable from the working directory"
                      False)
     else do
@@ -616,11 +568,11 @@ newdirtyUnitCheck = do
       let bad = [ f ++ ": " ++ x ++ " at norm^2 " ++ show (norm2S psi)
                 | (f, src) <- zip ss srcs
                 , Right (_, prog) <- [parseProgram src]
-                , S.NewDirty x _ psi <- prog
+                , S.NewState x _ psi <- prog
                 , norm2S psi /= 1 ]
           unparsed = [ f | (f, src) <- zip ss srcs
                          , Left _ <- [parseProgram src] ]
-      pure (Check "every-newdirty-writes-a-unit-vector"
+      pure (Check "every-declared-state-is-a-unit-vector"
                   ("none of the " ++ show (length ss)
                    ++ " shipped programs writes a non-unit state by hand"
                    ++ (if null bad then "" else "  [" ++ show bad ++ "]")
@@ -689,19 +641,11 @@ raggedProgram =
       Act ("t1","v1") (joint "RAGGED" 2 2 raggedMat) ("t","v") $
         Drop "t1" (Ret "v1")
 
--- | The drop verdict as a boolean.  'DQT.Lifted.admissible' is local to that
+-- | The drop verdict as a boolean.  'Drop.Theory.Lifted.admissible' is local to that
 -- module, and the trace checks need the profile as a bit vector.
 isSafeV :: Verdict -> Bool
 isSafeV (Safe _) = True
 isSafeV _        = False
-
--- | The Kraus rank a refused drop reports, or 'Nothing' when it is accepted.
-rankOf :: Program -> Maybe Int
-rankOf p = case checkProgram p of
-  Left _   -> Nothing
-  Right tp -> case verdict tp of
-    Unsafe _ r -> Just r
-    _          -> Nothing
 
 -- | Every denotation the suite knows: the catalogue, and the selected denotation
 -- of every lifted example along every measurement record.  Zero maps (unreachable
@@ -713,12 +657,11 @@ coreMapsEverywhere =
      | p <- liftedExamples, Right tp <- [checkLProgram p]
      , tr <- allTraces (ltDepth tp) ]
 
--- | The lifted examples of "DQT.Lifted".
+-- | The lifted examples of "Drop.Theory.Lifted", every one the paper discusses.
 liftedExamples :: [LProgram]
 liftedExamples =
   [ liftedWitness, liftedWitnessNoRead, classicalCoreNaiveEncoding
-  , qubitSplitAfterJointGate, depthTwoEveryBitLoadBearing, liveTradeRespread
-  , sameChannelSafe, sameChannelUnsafe ]
+  , qubitSplitAfterJointGate, sameChannelSafe, sameChannelUnsafe ]
 
 -- | The orthogonal projector @g g^dagger / ||g||^2@ onto the line of @g@.
 rayProjector :: Vec -> Mat

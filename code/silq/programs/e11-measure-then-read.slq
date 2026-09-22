@@ -1,4 +1,4 @@
-// Measure then read, the third of three introductory programs, in its
+// Measure then read, the third of the paper's three opening programs, in its
 // attempted spelling: measure the temporary, keep the post-measurement
 // register, read it into the visible register, then drop it.  Silq's measure
 // consumes its argument, so this program names the temporary after measuring

@@ -1,40 +1,33 @@
-% The outcome split of program (c): one text, two reachable outcomes, two
-% verdicts. This is the paper's whole difficulty in one picture, and it is
-% the figure the introduction stands on.
-%
-% The colour is the temporary's level: level 0 accent, level 1 accentwarm,
-% level 2 accentplum, the same convention as the K matrices in section 2.2.
-%
-%   make figures                                  compiles it
-%   \includegraphics{figures/outcome-split}       includes it
 \documentclass[tikz,border=2pt]{standalone}
 \input{house}
 
 \begin{document}
 \begin{tikzpicture}[house, node distance=7mm and 8mm]
 
-  \node[boxhi, text width=54mm] (top)
-    {$\mathit{tilt}\,|0\rangle = \tfrac13\bigl(
-        {\color{accent}2\,|0\rangle} +
-        {\color{accentwarm}2\,|1\rangle} +
-        {\color{accentplum}|2\rangle}\bigr)$\\[2pt]
-     \footnotesize measure whether $t \in \{0,1\}$};
+  \node[boxhi, text width=60mm] (top)
+    {after \texttt{H q; CX q t}:\quad
+     $\tfrac{1}{\sqrt2}\bigl(
+        {\color{accent}(x_0{+}x_1)\,|00\rangle} +
+        {\color{accentwarm}(x_0{-}x_1)\,|11\rangle}\bigr)$\\[2pt]
+     \footnotesize measure whether $t = |0\rangle$, then apply $V$};
 
-  \node[box, below left=of top, text width=48mm, xshift=24mm] (in)
-    {outcome $\{0,1\}$ survives, weight $\tfrac89$\\[2pt]
-     ${\color{accent}K_0 = \tfrac23 I}$, ${\color{accentwarm}K_1 = \tfrac23 X}$: two actions\\[2pt]
-     \textbf{the drop is wrong}};
-
-  \node[box, below right=of top, text width=48mm, xshift=-24mm] (out)
-    {outcome $\{2\}$ survives, weight $\tfrac19$\\[2pt]
-     ${\color{accentplum}K_2 = \tfrac13 X^{2}}$ alone: one action\\[2pt]
+  \node[box, below left=of top, text width=50mm, xshift=26mm, align=center] (in)
+    {$t$ landed on $|0\rangle$: $p=1$\\[2pt]
+     ${\color{accent}\tfrac{x_0+x_1}{\sqrt2}\,|0\rangle \otimes |0\rangle}$:\\[1pt]
+     the temporary on one vector\\[2pt]
      \textbf{the drop is safe}};
+
+  \node[box, below right=of top, text width=50mm, xshift=-26mm, align=center] (out)
+    {$t$ did not: $p=0$\\[2pt]
+     ${\color{accentwarm}\tfrac{x_0-x_1}{2}\,(|01\rangle + |10\rangle)}$:\\[1pt]
+     entangled with $q$ when nonzero\\[2pt]
+     \textbf{the drop is unsafe}};
 
   \draw[flow] (top.south west) -- (in.north);
   \draw[flow] (top.south east) -- (out.north);
 
   \node[lbldim, below=2.5mm of $(in.south)!0.5!(out.south)$, align=center]
-    {\itshape same source text on both sides; which side a run is on is decided when it runs};
+    {\itshape each outcome has weight $1/2$ at a basis input; for a general input the weights can differ};
 
 \end{tikzpicture}
 \end{document}

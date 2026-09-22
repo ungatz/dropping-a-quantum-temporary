@@ -1,14 +1,12 @@
 # Silq transcripts
 
 What Silq says about each program in `programs/`, taken verbatim from the
-recorded runs.  Apart from the two group headings, only commands and tool
-output appear below.  `run_silq.sh` reproduces the type-check column against
-any build.
+recorded runs.  Only commands and tool output appear below.  `run_silq.sh`
+reproduces the type-check column against any build.
 
-Two binaries were used.  Each block says which, except the 20-seed sweep at
-the end, whose attribution is inferred and is marked there.  The programs
-`e1` to `e11` were run against silq built from commit `a47d974`; the programs
-`r1` to `r8d` were run against silq built from commit `5417dce`.
+Two binaries were used, and each block says which.  The programs `e1` to
+`e11` were run against silq built from commit `a47d974`; the programs `r1`
+to `r8d` were run against silq built from commit `5417dce`.
 
 Every program in `programs/` has a recorded run; nothing is missing, and
 nothing below is reconstructed.  One block carries an edit, and it is the
@@ -17,21 +15,15 @@ name, so the file name in its command and in its diagnostic follows the
 current name of the program.  Nothing else in that block is changed, and the
 line and column it reports still point at the same line of the same file.
 
-The seeds a block was run at are named in its label, and Silq prints the seed
-itself at the head of each run's output.  The two seed sweeps are the
-exception: they are summarised rather than reproduced seed by seed.
-
-Silq spells the boolean type `B` and `𝔹`, and both spellings occur in
-`programs/`.  They are the same type: `e9-park-witness.slq` writes `𝔹` and
-`r4d-dirty-witness-attempt.slq` writes `B`, and both draw the same
-diagnostic.
+The seeds a block was run at are named in its label.  Silq prints the seed
+itself at the head of each run's output.
 
 ---
 
 ## Programs e1 to e11 -- silq built from commit a47d974
 
-Each was type-checked with `silq <file>`, and the blocks carry `run_silq.sh`'s
-own two-space indent.  The heading for this group:
+Each was type-checked with `silq <file>`.  The run below is the transcript
+`run_silq.sh` produces, with its own two-space indent.
 
 ```
 # silq transcript
@@ -868,9 +860,7 @@ Type check.
 exit status: 0
 ```
 
-Run, the sweep over seeds 1 to 40.  The block below is one failing run of the
-forty, kept for the shape of the diagnostic; the seeds that fail are listed at
-the end of this file.
+Run, the sweep over seeds 1 to 40.
 
 ```
 for s in $(seq 1 40); do ~/lib/silq/silq r8d-rus-wrong-witness.slq --run --seed=$s; done

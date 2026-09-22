@@ -1,0 +1,16 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+\begin{document}
+\begin{tikzpicture}[house]
+\node[box,minimum width=16mm] (l) at (0,0) {$\ell=\binom{\alpha}{\beta}$};
+\node[boxhi,minimum width=24mm] (b) at (4,0) {$B\ell=\dfrac1{\sqrt2}\begin{pmatrix}\beta\\\beta\\\alpha\\\alpha\end{pmatrix}$};
+\node[box,minimum width=24mm] (j) at (8.3,0) {$\ell\otimes|0\rangle=\begin{pmatrix}\alpha\\0\\\beta\\0\end{pmatrix}$};
+\draw[flow] (l)--node[above,lbl] {$B=X\otimes|+\rangle$} (b);
+\draw[flow] (b)--node[above,lbl] {$T=X\otimes H$} (j);
+\node[lbldim] at (0,-1.22) {loan input};
+\node[lbldim] at (4,-1.22) {loan and temporary};
+\node[lbldim] at (8.3,-1.22) {loan returned, temporary fresh};
+\node[align=center] at (3.9,-2.35) {$B=\dfrac1{\sqrt2}\begin{pmatrix}0&1\\0&1\\1&0\\1&0\end{pmatrix},\qquad B^\dagger B=I_2,\qquad TB=I_2\otimes|0\rangle$.};
+\node[lbldim] at (3.9,-3.3) {Block basis order: $|00\rangle,|01\rangle,|10\rangle,|11\rangle$; loan first.};
+\end{tikzpicture}
+\end{document}

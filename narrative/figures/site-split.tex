@@ -1,0 +1,31 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+\begin{document}
+\begin{tikzpicture}[house]
+\node[anchor=north west,align=left,font=\small\ttfamily] at (0,0) {prog order (x : [2]) : [2] \{\\
+\quad new t : [2] @ |0>;\\
+\quad new h : [2] @ |0>;\\
+\quad new a : [2] @ |0>;\\
+\quad drop h;\\
+\quad drop (a,t);\\
+\quad return x\\
+\}};
+\node[anchor=west,font=\small\bfseries] at (5.3,-.15) {State just before \texttt{drop (a,t)}};
+\node[anchor=west,lbldim] at (5.3,-.65) {input $x$, then three allocations:};
+\node[box,minimum width=11mm] (x) at (5.9,-1.2) {$x$};
+\node[boxhi,minimum width=11mm] (t) at (7.3,-1.2) {$t$};
+\node[boxdim,minimum width=11mm] (h) at (8.7,-1.2) {$h$};
+\node[boxhi,minimum width=11mm] (a) at (10.1,-1.2) {$a$};
+\node[lbldim] at (8.7,-1.72) {$h$ was dropped; its factor remains};
+\draw[flow] (8,-2.0)--(8,-2.7);
+\node[anchor=west,lbldim] at (8.2,-2.35) {regroup; apply no gate};
+\node[boxhi,minimum width=11mm] at (5.9,-3.15) {$a$};
+\node[boxhi,minimum width=11mm] at (7.3,-3.15) {$t$};
+\node[box,minimum width=11mm] at (8.7,-3.15) {$x$};
+\node[boxdim,minimum width=11mm] at (10.1,-3.15) {$h$};
+\draw[accent] (5.35,-3.6)--(5.35,-3.75)--(7.85,-3.75)--(7.85,-3.6);
+\draw[ink] (8.15,-3.6)--(8.15,-3.75)--(10.65,-3.75)--(10.65,-3.6);
+\node[align=center] at (6.6,-4.2) {block: $\mathcal H_a\otimes\mathcal H_t$\\\footnotesize order in \texttt{(a,t)}};
+\node[align=center] at (9.4,-4.2) {rest: $\mathcal H_x\otimes\mathcal H_h$\\\footnotesize remaining allocation order};
+\end{tikzpicture}
+\end{document}
