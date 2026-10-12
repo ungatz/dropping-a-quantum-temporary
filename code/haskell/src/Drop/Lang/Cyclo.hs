@@ -156,7 +156,7 @@ sinPi8 = (sqrt2C - 1) * cosPi8        -- tan(pi/8) = sqrt2 - 1
 embedQS2 :: QS2 -> Cyclo
 embedQS2 (QS2 a b) = fromRational a + fromRational b * sqrt2C
 
--- Exact sign in the real subfield of Q(zeta_16)
+-- Exact Sign In The Real Subfield Of Q(zeta_16)
 --
 -- Every real element of Q(zeta_16) is p + q*cos(pi/8) with p, q in Q[sqrt2],
 -- because tan(pi/8) = sqrt2 - 1 makes {1, sqrt2, c, sqrt2*c} a spanning set.

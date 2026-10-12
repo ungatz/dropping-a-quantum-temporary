@@ -1,8 +1,6 @@
--- c.s: program (c) of the measurement section's two programs, written out on a qubit.  It allocates a
--- temporary, copies the visible register into it, measures whether the
--- temporary landed on |0>, applies one joint gate, and drops.  The body is
--- token-identical to the listing there; the declaration of V is the gate
--- the listing names and does not spell.
+-- c.s: program (c). It allocates a temporary, applies H to the visible
+-- register, copies it into the temporary, measures whether the temporary
+-- landed on |0>, applies V, and drops. The declaration below specifies V.
 --
 -- V is the real orthogonal gate fixing |00>, sending |10> to |11> and |01>,
 -- |11> to (|01> -+ |10>)/sqrt2, the temporary written first.

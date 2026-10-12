@@ -217,10 +217,10 @@ badInputs =
      "prog p (x : [2]) : [2] {\nnew t : [2] @ (1, 1);\ndrop t; return x }\n")
   , ("new @ the zero vector",   2,
      "prog p (x : [2]) : [2] {\nnew t : [2] @ (0, 0);\ndrop t; return x }\n")
-  , ("newdirty is refused",  2, "prog p (x : [2]) : [2] {\nnewdirty t : [2];\nreturn x }\n")
+  , ("newdirty is gone",     2, "prog p (x : [2]) : [2] {\nnewdirty t : [2];\nreturn x }\n")
   , ("a loan is not a statement", 2,
      "prog p (x : [2]) : [2] {\nloan t : [2];\nreturn x }\n")
-  , ("vis is refused",       2, "prog p (x : [2]) : [2] {\nvis y : [2];\nreturn x }\n")
+  , ("vis is gone",          2, "prog p (x : [2]) : [2] {\nvis y : [2];\nreturn x }\n")
   , ("mat wrong shape",      2, "prog p (x : [2]) : [2] {\nmat x { 1, 0 ; 0 };\nreturn x }\n")
   , ("mat wrong dimension",  3,
      "prog p (x : [2]) : [2] {\nnew t : [3] @ |0>;\nmat x t { 1, 0 ; 0, 1 };\ndrop t; return x }\n")
@@ -262,8 +262,8 @@ badCheck (nm, ln, src) =
 -- accepts is exactly the printed grammar. Each is refused at the right
 -- line, with a message naming the printed form instead.
 -- (name, expected line, source, substring the message must name)
-bindingSpellings :: [(String, Int, String, String)]
-bindingSpellings =
+legacySpellings :: [(String, Int, String, String)]
+legacySpellings =
   [ ( "t = new [2] @ |0>;"
     , 2
     , "prog p (x : [2]) : [2] {\nt = new [2] @ |0>;\ndrop t; return x }\n"
@@ -282,9 +282,9 @@ bindingSpellings =
     , "drop t;" )
   ]
 
-bindingCheck :: (String, Int, String, String) -> (String, Bool)
-bindingCheck (nm, ln, src, needle) =
-  ( "the binding spelling `" ++ nm ++ "` is refused at line " ++ show ln
+legacyCheck :: (String, Int, String, String) -> (String, Bool)
+legacyCheck (nm, ln, src, needle) =
+  ( "legacy spelling `" ++ nm ++ "` is refused at line " ++ show ln
     ++ " naming `" ++ needle ++ "`"
   , case parseProgram src of
       Left err -> ("line " ++ show ln ++ ":") `isPrefixOf` err
@@ -385,7 +385,7 @@ checks = concat
                    == Just 0
                | sel <- allSelections 2, sel /= [SOut, SOut] ] )
     ]
-  , -- the borrowed loan: the drop's certificate is the fixed gate B it
+  , -- the borrowed loan: the drop's certificate is now the fixed gate B it
     -- is reclaimed with (a loan carries no state to report a "line" of),
     -- and deleting the restoring Toffoli is refused
     [ ( "mcx-dirty.s: drop a admitted, B = I (the loan returns as it arrived)"
@@ -403,7 +403,7 @@ checks = concat
           _ -> False )
     ]
   , map badCheck badInputs
-  , map bindingCheck bindingSpellings
+  , map legacyCheck legacySpellings
   , -- the trace command: one frame per statement in every selection, and
     -- the drop of t reads the same verdict the checks above already pin
     [ ( "dj.s trace: one frame per statement, in every selection"

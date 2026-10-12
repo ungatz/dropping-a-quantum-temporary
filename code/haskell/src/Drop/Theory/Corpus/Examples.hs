@@ -211,7 +211,7 @@ czThenCopy :: Program
 czThenCopy = borrowed "cZ ; copy" [gCZ, gCopy]
 
 -- | The separator pair lends the temporary in the balanced state, so the
--- allocation is followed by an @H@ on the temporary: in a language whose @new@
+-- allocation is followed by an @H@ on the temporary: in a calculus whose @new@
 -- allocates a basis state, preparing the balanced state is one gate.
 borrowed :: String -> [Gate] -> Program
 borrowed lbl gs = straightLine lbl 2 2 0 (gHt 2 : gs)

@@ -1,0 +1,22 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+\definecolor{loanink}{HTML}{CC79A7}
+\definecolor{returnink}{HTML}{009E73}
+\definecolor{returnsoft}{HTML}{DAF1E9}
+\begin{document}
+\begin{tikzpicture}[house,semithick,font=\small,
+ gate/.style={draw=ink,fill=white,minimum width=5.2mm,minimum height=5.2mm,inner sep=1.5pt},
+ repair/.style={gate,draw=returnink,fill=returnsoft}]
+\node[font=\footnotesize,text=muted] at (1.15,.7) {source};
+\node[font=\footnotesize,text=returnink] at (4.2,.7) {inserted before drop};
+\foreach \y/\initial/\middle/\last/\op in {.25/{l:\ell}/{X\ell}/{\ell}/X,-.50/{t:|0\rangle}/{|+\rangle}/{|0\rangle}/H}{
+ \node[anchor=east,text=loanink,inner sep=2pt] at (0,\y) {$\initial$};
+ \draw[loanink] (0.05,\y)--(5.35,\y);
+ \node[gate] at (1.15,\y) {$\op$};
+ \node[fill=white,text=loanink,inner sep=2pt] at (2.7,\y) {$\middle$};
+ \node[repair] at (4.2,\y) {$\op$};
+ \node[anchor=west,text=returnink,inner sep=2pt] at (5.4,\y) {$\last$};
+}
+\node[text=returnink,font=\footnotesize] at (3.1,-.94) {$T=X\otimes H$};
+\end{tikzpicture}
+\end{document}

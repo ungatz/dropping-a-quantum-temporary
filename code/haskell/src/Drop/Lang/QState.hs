@@ -58,16 +58,46 @@ stateProportional s1 s2 =
 
 -- Gates
 
+-- | @U U^H = I@, exactly: the premise of the Gate rule (U is in the gate
+-- set, a set of unitaries). There is no tolerance, because the whole
+-- package is exact arithmetic.
+isUnitary :: (Eq a, Num a, Conj a) => Matrix a -> Bool
+isUnitary u =
+  not (null u) && all ((== n) . length) u
+  && and [ row i j == (if i == j then 1 else 0) | i <- [0 .. n - 1], j <- [0 .. n - 1] ]
+  where
+    n = length u
+    row i j = sum [ (u !! i !! k) * conj (u !! j !! k) | k <- [0 .. n - 1] ]
+
 -- | Apply gate @g@ to the registers at positions @targets@, in that order.
 -- Gather formulation: out[k] sums g[t(k)][j] over the states that agree with
 -- k away from the targets.
+--
+-- A gate whose matrix does not fit its registers is refused by name rather
+-- than read: a larger matrix would be cut to its top-left block, a smaller
+-- one would index past its end, and a repeated target would compute a map
+-- that is no gate at all. Every caller in the package builds a well-shaped
+-- call; a program built by hand need not.
 applyGate :: Num a => [Int] -> Matrix a -> [Int] -> StateV a -> StateV a
-applyGate dims g targets st =
+applyGate dims g targets st
+  | any (\t -> t < 0 || t >= length dims) targets =
+      error ("applyGate: target position out of range " ++ show targets
+             ++ " for " ++ show (length dims) ++ " registers")
+  | length (nubInts targets) /= length targets =
+      error ("applyGate: a register is named twice in one gate (positions "
+             ++ show targets ++ ")")
+  | length g /= tsize || any ((/= tsize) . length) g =
+      error ("applyGate: a matrix of " ++ show (length g) ++ " rows does not act on registers of total \
+             \dimension " ++ show tsize ++ "; the matrix of a gate is square, of side the product of \
+             \its registers' dimensions")
+  | otherwise =
   [ sum [ (g !! ti) !! tj * (st !! src ls tj) | tj <- [0 .. tsize - 1] ]
   | k <- [0 .. n - 1]
   , let ls = idxToLevels dims k
   , let ti = levelsToIdx tdims [ ls !! t | t <- targets ] ]
   where
+    nubInts []       = []
+    nubInts (x : xs) = x : nubInts (filter (/= x) xs)
     n     = product dims
     tdims = [ dims !! t | t <- targets ]
     tsize = product tdims
@@ -153,7 +183,7 @@ reindexAB dims regsA =
 -- | 'reindexAB' with the A side indexed in the caller's /own/ order: the
 -- a-th row combines the level tuple @idxToLevels [dims !! i | i <- regsA] a@
 -- with the registers @regsA@ names, in that order (the B side stays in
--- ascending register order, as 'reindexAB' has it). The site definition
+-- ascending register order, as 'reindexAB' has it). The site definition's clause (3)
 -- needs this: H_block is the tensor product of the block's registers as the
 -- @drop@ writes them, which need not be their order in the machine.
 reindexABOrd :: [Int] -> [Int] -> StateV a -> Matrix a

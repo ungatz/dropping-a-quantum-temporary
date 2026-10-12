@@ -1,7 +1,7 @@
 -- |
 -- Module      : Drop.Theory.Program.Syntax
 --
--- The measurement-free affine core of the language section: @new@ brings a
+-- The measurement-free affine calculus of the language section: @new@ brings a
 -- temporary into existence, a joint gate lets it act on the visible
 -- register, and @drop@ removes its name, with no side condition of its own.
 module Drop.Theory.Program.Syntax
@@ -65,7 +65,7 @@ tyDim (TyPair a b) = tyDim a * tyDim b
 data GateKind = OnTmp | OnVis | Joint
   deriving (Eq, Show)
 
--- | A gate of the language: a named unitary on @H_d (x) H_m@, temporary factor
+-- | A gate of the calculus: a named unitary on @H_d (x) H_m@, temporary factor
 -- first.  The @Gate@ typing rule's premise @U^dagger U = U U^dagger = I@ is
 -- checked in "Drop.Theory.Program.Typing", not here, so that an ill-typed program can still be
 -- built and then rejected.

@@ -25,8 +25,8 @@
 -- extra production ('SBlock') that spells both, and 'toTerm' discharges it.
 --
 -- The scalar field is left polymorphic, as in Drop.Lang.Syntax: 'StNew' names
--- psi as a StateV a, so a clean allocation is 'StNew t d (ket [d] [i])' and
--- a dirty one any other unit vector.
+-- psi as a StateV a: a basis allocation is 'StNew t d (ket [d] [i])',
+-- and a non-basis allocation can use any other unit vector.
 
 module Drop.Lang.Typed where
 

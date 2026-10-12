@@ -1,6 +1,5 @@
 -- mcx-dirty.s: the 3-controlled X (C3X) from four Toffolis and one borrowed
--- register, after Barenco et al.  Token-identical to the mcx3 listing in
--- the four-algorithms subsection.  The construction is also the first case study of Su, Zhou,
+-- register, after Barenco et al. The construction is also the first case study of Su, Zhou,
 -- Feng and Ying, arXiv:2409.10153.
 --
 -- Site: drop a (depth 0).  Expected: SAFE, the loan handed back with B = I

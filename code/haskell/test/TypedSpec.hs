@@ -5,7 +5,7 @@
 -- Sections:
 --   (a) every programs/*.s corpus program, converted to the typed syntax
 --       via Drop.Lang.Elab.flatToProgram, typechecks;
---   (b) the three shapes a naive semantics gets stuck on run to a value;
+--   (b) the three previously-stuck shapes run to a value;
 --   (c) a random stuck-state search: >= 2000 small well-typed core terms,
 --       each checked for progress, preservation and the termination
 --       measure;
@@ -14,14 +14,14 @@
 --   (e) the desugaring lemma, on a handful of hand-built surface terms;
 --   (n) Step-New's second side condition: the machine refuses a name that
 --       is bound later in the term, which would clone a register;
---   (o) the type-safety theorem's termination bound: the number of
+--   (o) the termination bound of the type-safety theorem's clause (3): the number of
 --       statements along the longest branch, an `if` counting as one;
---   (p) the hidden-register invariant: along every run of every corpus program, the
+--   (p) the type-safety theorem's clause (5): along every run of every corpus program, the
 --       term's context is the allocated registers minus the dropped ones;
 --   (q) the desugaring lemma on the corpus: expanding a block changes no state at
 --       any site, hence no verdict;
 --   (g) the site definition adversarially: loans, tuple blocks, unreachable records;
---   (j) the site definition's clause (4) at a block of several registers;
+--   (j) the site definition's clause (3) at a block of several registers;
 --   (l) the loan discipline: every loan dropped exactly once, never
 --       returned (Drop.Lang.Check.loanDiscipline).
 --
@@ -175,7 +175,7 @@ flatToCoreForTest vis prog = toTerm (progTerm (flatToProgram vis prog))
 flatToSurfaceForTest :: Num a => VisSpec -> Prog a -> Surface a
 flatToSurfaceForTest vis prog = progTerm (flatToProgram vis prog)
 
--- (b) The three shapes a naive semantics gets stuck on ---------------------
+-- (b) The three previously-stuck shapes ----------------------------------
 
 runsToValue :: (Eq a, Num a) => [(Name, Int)] -> StateV a -> Term a -> Bool
 runsToValue vis inp core = not (null leaves) && all isFinal leaves
@@ -183,7 +183,7 @@ runsToValue vis inp core = not (null leaves) && all isFinal leaves
 
 stuckShapeChecks :: Counters -> IO ()
 stuckShapeChecks c = do
-  putStrLn "(b) the three shapes a naive semantics gets stuck on"
+  putStrLn "(b) the three previously-stuck shapes"
   -- (i) a bare operation in tail position via sugar: `H x; return x`.
   let core1 :: Term Cyclo
       core1 = Do (StGate gHC (VVar "x")) (Return (VVar "x"))
@@ -455,7 +455,7 @@ randomStuckSearch c = do
   where
     nubAppend new old = old ++ filter (`notElem` old) new
     -- The configuration's own context: the allocated registers the term
-    -- still names, which the hidden-register invariant says are the allocated ones
+    -- still names, which the type-safety theorem's clause (5) says are the allocated ones
     -- minus the dropped ones. (p) below checks that reading against the
     -- drops the run actually crossed.
     liveCtxOf leaf = ctxFromList (ctxOf leaf)
@@ -477,8 +477,8 @@ randomMachineAgrees c = do
       vis0 = [("w0", 2)]
   agreeRef <- newIORef (0 :: Int)
   totalRef <- newIORef (0 :: Int)
-  -- Every term of this language elaborates: the shapes that would force a
-  -- refusal -- a gate or a lift that renames -- do not exist, since neither binds.
+  -- Every term of this language elaborates: the shapes Elab used to refuse
+  -- -- a gate or a lift that renames -- do not exist, since neither binds.
   mapM_ (\core -> case elabE core of
             Left e -> putStrLn ("    a random term did not elaborate: " ++ e)
             Right prog -> do
@@ -667,7 +667,7 @@ siteVerdicts src = case runText src of
                    | s <- RR.rpSites r ]
 
 -- | The whole report as the command line prints it, so a check can name
--- the certificate ("B = { 1, 0 ; 0, 1 }") in the paper's own spelling.
+-- the certificate ("B = { 1, 0 ; 0, 1 }") in the surface syntax.
 reportText :: String -> String
 reportText src = either ("REJECTED: " ++) RR.renderReport (runText src)
 
@@ -746,10 +746,10 @@ siteChecks c = do
   -- (h) a temporary in a program that also holds a loan. The site map's
   -- domain is the whole input context, loans included, so the loan is
   -- varied too; seeding it at |0> instead calls (h1) safe.
-  eq "(h1) a temporary that copies a live loan is UNSAFE"
-     progTempReadsLoan [("t", ["Unsafe"])]
-  eq "(h2) the same temporary with the copy undone is SAFE"
-     progTempReadsLoanBack [("t", ["Safe"])]
+  eq "(h1) a temporary that copies a live loan is UNSAFE, and so is the loan"
+     progTempReadsLoan [("t", ["Unsafe"]), ("a", ["Unsafe"])]
+  eq "(h2) the same temporary with the copy undone is SAFE, and so is the loan"
+     progTempReadsLoanBack [("t", ["Safe"]), ("a", ["Safe"])]
   eq "(h3) a temporary beside an untouched loan is SAFE, and the loan is too"
      progTempBesideLoan [("t", ["Safe"]), ("a", ["Safe"])]
 
@@ -758,6 +758,8 @@ siteChecks c = do
   -- a line number rather than mis-run.
   rejects "(i1) an allocation inside an if branch is refused by name"
      progAllocInBranch "'new' inside an if branch"
+  rejects "(i1') a drop in both arms is refused by name, each arm read in the scope before the if"
+     progDropInBothArms "'drop' inside an if branch"
   rejects "(i2) a block that shadows its own binder is refused by name"
      "prog p (x : [2]) : [2] * [2] { y = { new y : [2] @ |0>; return y }; return (x, y) }"
      "already exists"
@@ -793,9 +795,9 @@ siteChecks c = do
   check1 c "(o') drop () renders back as itself"
     (renderRoundTrips progDropUnit)
 
--- (j) the site definition's clause (4) at a block of SEVERAL registers ---------------
+-- (j) the site definition's clause (3) at a block of SEVERAL registers ---------------
 --
--- Clause (4) writes the input space as [[Omega]] = H_loan (x) [[Omega']],
+-- Clause (3) writes the input space as [[Omega]] = H_loan (x) [[Omega']],
 -- where H_loan is the tensor product of the spaces of the loans IN THE
 -- BLOCK, and asks that the site map factor as sigma_s = B (x) W with
 -- B : H_loan -> H_block an isometry (rectangular when the block holds
@@ -807,7 +809,7 @@ siteChecks c = do
 -- index of |i>_a |j>_t is 2i + j.
 blockChecks :: Counters -> IO ()
 blockChecks c = do
-  putStrLn "(j) the site definition's clause (4) at a block of several registers"
+  putStrLn "(j) the site definition's clause (3) at a block of several registers"
   let eq name src want = check1 c name (siteVerdicts src == Right want)
       cert name src b  = check1 c name (count ("B = " ++ b) (reportText src) == 1)
 
@@ -849,7 +851,7 @@ blockChecks c = do
   --     |b>_a  |->  (|b>|0> + |b+1>|1>)/sqrt2
   -- which IS B|b> for B = (1/sqrt2) * { 1,0 ; 0,1 ; 0,1 ; 1,0 } (columns
   -- (|00>+|11>)/sqrt2 and (|01>+|10>)/sqrt2, orthonormal), so B^dagger B =
-  -- I_2. a IS entangled with t, and the block holds both, so clause (4)
+  -- I_2. a IS entangled with t, and the block holds both, so clause (3)
   -- still factors. SAFE.
   eq "(j-v) loan a + temporary t, H t; CX t a, block (a,t): SAFE"
      progBlockLoanEntangled [("(a, t)", ["Safe"])]
@@ -993,7 +995,7 @@ loanDisciplineChecks c = do
          Right ok -> ok == "mcx3 : [2] * [2] * [2] * [2]"
          Left _   -> False)
 
-  check1 c "(l2) `return (x, a)` with `a` a loan is rejected, naming the rule"
+  check1 c "(l2) `return (x, a)` with a a loan is rejected, naming the rule"
     (case RR.typecheckText srcReturnsLoan of
        Left e  -> "a loan is dropped, not returned (the language definition)" `isInfixOf` e
        Right _ -> False)
@@ -1093,7 +1095,7 @@ adversarialPrograms =
 progSwapLoan, progSwapLoanBack, progCZLoan, progTwoLoans, progTwoLoansHalf,
   progTwoLoansTuple, progLiftedLoan, progLoanAndTemp, progDropInput,
   progBellJoint, progBellApart, progUnreachable, progTempReadsLoan,
-  progTempReadsLoanBack, progTempBesideLoan, progAllocInBranch :: String
+  progTempReadsLoanBack, progTempBesideLoan, progAllocInBranch, progDropInBothArms :: String
 
 progSwapLoan =
   "prog swap_loan (x : [2], loan a : [2]) : [2] * [2] {\n\
@@ -1191,19 +1193,21 @@ progUnreachable =
   \}"
 
 progTempReadsLoan =
-  "prog temp_reads_loan (x : [2], loan a : [2]) : [2] * [2] {\n\
+  "prog temp_reads_loan (x : [2], loan a : [2]) : [2] {\n\
   \    new t : [2] @ |0>;\n\
   \    CX a t;\n\
   \    drop t;\n\
-  \    return (x, a)\n\
+  \    drop a;\n\
+  \    return x\n\
   \}"
 
 progTempReadsLoanBack =
-  "prog temp_reads_loan_back (x : [2], loan a : [2]) : [2] * [2] {\n\
+  "prog temp_reads_loan_back (x : [2], loan a : [2]) : [2] {\n\
   \    new t : [2] @ |0>;\n\
   \    CX a t;  CX a t;\n\
   \    drop t;\n\
-  \    return (x, a)\n\
+  \    drop a;\n\
+  \    return x\n\
   \}"
 
 progTempBesideLoan =
@@ -1213,6 +1217,14 @@ progTempBesideLoan =
   \    drop t;\n\
   \    drop a;\n\
   \    return x\n\
+  \}"
+
+progDropInBothArms =
+  "prog drop_in_both_arms (q : [2]) : [2] {\n\
+  \    new r : [2] @ |0>;\n\
+  \    p = lift[{0}] r;\n\
+  \    if p { drop r; } else { drop r; }\n\
+  \    return q\n\
   \}"
 
 progAllocInBranch =
@@ -1230,7 +1242,7 @@ progAllocInBranch =
 --
 -- The machine figure's \textsc{Step-New} allocates a name w with w not in Delta AND
 -- w NOT BOUND IN M. The second condition is the one that rules out capture:
--- the paper's own example is
+-- the example is
 --
 --     new 5 : [2] @ |0>;  new 7 : [2] @ |0>;  return (5, 7)
 --
@@ -1314,7 +1326,7 @@ stepNewCaptureChecks c = do
 
 -- (o) the termination bound, an `if` counting as one ----------------------
 --
--- The type-safety theorem's termination bound: every run reaches a final configuration in at most
+-- The type-safety theorem's clause (3): every run reaches a final configuration in at most
 -- |M| steps, where |M| is the number of statements along the longest branch,
 -- an `if` counting as ONE ('Drop.Lang.Typed.termSize').
 
@@ -1381,7 +1393,7 @@ hasIf (If _ _ _)  = True
 
 -- (p) the hidden registers: allocated minus dropped ------------------------
 --
--- The hidden-register invariant: along a run, the term's context is the allocated
+-- The type-safety theorem's clause (5): along a run, the term's context is the allocated
 -- registers MINUS the ones the run has dropped. There is no hidden set in
 -- the configuration, so this is a claim relating two things that are both
 -- read off it: 'ctxOf' (the allocated registers the term still names) and
@@ -1432,7 +1444,7 @@ hiddenRegisterChecks c = do
 -- The desugaring lemma (2). Every corpus program with a non-tail `if` is read by
 -- Drop.Lang.Elab as a BLOCK -- @(if e {M1} else {M2}) (+)_ybar M@ -- and the
 -- statics and the machine see the expanded term, while Drop.Lang.Interp (the
--- engine that decides every verdict the paper prints) runs the UNEXPANDED
+-- engine that decides the language examples) runs the UNEXPANDED
 -- command list. So the two can be compared at the only place a verdict is
 -- read: the state at a drop site.
 --
@@ -1476,7 +1488,6 @@ flatExpandDirect ret prog = fst (go 0 prog)
       If (gb g) (copyInto t (copyInto rest k)) (copyInto e (copyInto rest k))
     copyInto (_ : _) _ = error "flatExpandDirect: an if-branch binds a wire"
 
-    gb (GBit b)   = BLit b
     gb (GParam p) = BParam p
     gb (GNot e)   = BNot (gb e)
     gb (GAnd x y) = BAnd (gb x) (gb y)

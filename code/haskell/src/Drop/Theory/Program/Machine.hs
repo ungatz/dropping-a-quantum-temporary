@@ -18,7 +18,7 @@ import Drop.Theory.Algebra.Linear
 import Drop.Theory.Program.Syntax
 import Drop.Theory.Program.Typing (TypedProgram(..))
 
--- | A machine configuration for the measurement-free language.
+-- | A machine configuration for the measurement-free calculus.
 data Config = Config
   { cfgNames   :: [Name]   -- ^ live and latent registers, in tensor order
   , cfgDims    :: [Int]
@@ -31,7 +31,18 @@ initConfig v m psi = Config [v] [m] [] psi
 
 -- | One step per term former.  There is no stuck state: every well-typed term
 -- either is a value or steps.
+--
+-- 'stepTerm' takes a term that need not have met the checker, and a dropped
+-- register stays in the tensor, so a gate or a second drop on it would go
+-- through; it is refused by name instead.
 stepTerm :: Config -> Term -> Config
+stepTerm c e
+  | (x : _) <- [ x | x <- named e, x `elem` cfgDropped c ] =
+      error ("Drop.Theory.Program.Machine: register " ++ x ++ " has been dropped")
+  where
+    named (Act _ _ (t, v) _) = [t, v]
+    named (Drop t _)         = [t]
+    named _                  = []
 stepTerm c (Ret _)    = c
 stepTerm c (Pair _ _) = c
 

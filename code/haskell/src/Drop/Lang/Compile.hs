@@ -9,10 +9,16 @@
 -- described construct by construct below, next to the code that realises
 -- it. Outside the domain, 'compile' returns a named 'CompileError' rather
 -- than guessing.
+-- Drops are part of the domain ('fragmentSafety'): a program that drops a
+-- loan after a lift or an if, or drops an input not marked loan at a site
+-- that is safe, with a nonzero site map, on some record, is refused with
+-- the drop it names.
 --
 -- Two passes precede emission, both pure and both over the *whole* term
--- (Drop.Lang.Check's discipline -- no allocation, lift or drop inside an `if`
--- branch -- makes both well defined):
+-- (the fragment 'compileFragment' checks first -- no allocation, lift or
+-- drop inside an `if` branch, a name bound once, one site id per surface
+-- drop -- makes both well defined; the parser enforces the same rules, and
+-- Drop.Lang.Check, which follows the paper's If rule, does not):
 --
 --   * 'layoutProgram' assigns physical qubit indices to every named wire
 --     (in program order) and a classical bit index to every lift, deciding
@@ -45,6 +51,7 @@ module Drop.Lang.Compile
   , liftInfoOf
   , wireAllocOf
   , visQubitsOf
+  , wireQubitsOf
   , leavesWithExpected
   , liftAncillaOf
   -- exported for the unit test (the reclaiming proposition's gate):
@@ -74,6 +81,7 @@ import Data.Map.Strict (Map)
 import Data.Maybe (fromMaybe)
 import Text.Printf (printf)
 
+import Drop.Lang.Check (checkProgram, showTypeError)
 import Drop.Lang.Cyclo (Cyclo (..))
 import Drop.Lang.Elab (elabE)
 import Drop.Lang.Interp (probesFor, loanEnvs, semanticVerdictS, semanticLoanCertS, Verdict (..))
@@ -132,12 +140,21 @@ isApproxIdentity m = and [ close (m !! i !! j) (if i == j then 1 else 0)
 
 -- | A square block factor B with B^dagger B = t I, t > 0 real
 -- (Drop.Lang.Interp.isScalarIdentity: the factorization of 'loanResultS'
--- fixes B only up to that scale), divided by sqrt t -- the squared norm of
--- any column -- so that it is unitary before an angle is read off it.
+-- fixes B only up to a nonzero scalar, since (cB) (x) (W/c) = B (x) W),
+-- divided by sqrt t -- the squared norm of any column -- so that it is
+-- unitary before an angle is read off it, and then by the phase of the
+-- first nonzero entry of its first column, so that a unit-scalar multiple
+-- of the identity or of a basis permutation is exactly that matrix before
+-- 'squareFactorEmittable' tests its shape. Without the second step a SWAP
+-- read as i SWAP (a program that applies diag(i,1) to another register
+-- first) was left live with a "not emitted" comment.
 normaliseSquareIso :: [[Complex Double]] -> [[Complex Double]]
 normaliseSquareIso bC =
   let t = sum [ magnitude (row !! 0) ** 2 | row <- bC, not (null row) ]
-  in if t < 1e-24 then bC else map (map (/ (sqrt t :+ 0))) bC
+      scaled = if t < 1e-24 then bC else map (map (/ (sqrt t :+ 0))) bC
+  in case [ z | (z : _) <- scaled, magnitude z > 1e-9 ] of
+       (z : _) -> map (map (/ (z / (magnitude z :+ 0)))) scaled
+       []      -> scaled
 
 daggerC :: [[Complex Double]] -> [[Complex Double]]
 daggerC m = [ [ conjugate (m !! j !! i) | j <- [0 .. n - 1] ] | i <- [0 .. n - 1] ]
@@ -154,7 +171,7 @@ squareFactorEmittable bN =
   isApproxIdentity bN || length bN == 2 || maybe False (const True) (permOfMatC bN)
 
 -- | A block that holds temporaries beside its loans has a rectangular block
--- factor B : H_loan -> H_block (the site definition's clause (4), Drop.Lang.Interp.loanResultS).
+-- factor B : H_loan -> H_block (the site definition's clause (3), Drop.Lang.Interp.loanResultS).
 -- When B is a product B' (x) g~ of a square factor on the loans and a
 -- certificate on the temporaries -- the shape under which the emitted gate
 -- is B'^dagger on the loans, then the reclaiming reflection on the
@@ -162,7 +179,7 @@ squareFactorEmittable bN =
 -- this returns @Just (B', g~)@, both exact, B' a @dLoan x dLoan@ matrix and
 -- g~ a vector of length @dTemp@, each indexed in the drop's order restricted
 -- to its kind. 'Nothing' when B entangles the loans with the temporaries (a
--- site still safe by the site definition's clause (4), with no product gate to write) or when
+-- site still safe by the site definition's clause (3), with no product gate to write) or when
 -- the block is not mixed at all. The rows of B are indexed in the drop's
 -- order over all its registers (Drop.Lang.QState.reindexABOrd); @kinds@ lists,
 -- in that order, each register's dimension and whether it is a loan.
@@ -531,6 +548,9 @@ emitTwoSupportReflectionOps qs psi g =
 data CompileError
   = NonPowerOfTwo Name Int
   | GateNotInDomain [Name] String
+  | DropOutsideFragment [Name] String
+  | NotWellTyped String
+  | OutsideFragment String
   | Other String
   deriving (Eq, Show)
 
@@ -538,7 +558,54 @@ showCompileError :: CompileError -> String
 showCompileError e = case e of
   NonPowerOfTwo x d -> "register " ++ x ++ " has dimension " ++ show d ++ ", not a power of two"
   GateNotInDomain xs msg -> "gate on " ++ unwords xs ++ " is not in the compile domain (" ++ msg ++ ")"
+  DropOutsideFragment xs msg -> "drop " ++ tupleText xs ++ " is outside the compilation fragment: " ++ msg
+  NotWellTyped msg -> "type error: " ++ msg
+  OutsideFragment msg -> "outside the compilation fragment: " ++ msg
   Other s -> s
+  where
+    tupleText [x] = x
+    tupleText xs = "(" ++ intercalate ", " xs ++ ")"
+
+-- | What every entry point of the compiler asks of a program before it lays
+-- it out. First the statics and the loan discipline ('checkProgram'): a term
+-- that was built directly, not parsed, may name a dropped wire or return a
+-- loan, and the layout below would give it qubits all the same. Then three
+-- rules of the parser that the statics do not impose, because the paper's
+-- If rule lets a branch allocate, lift and drop: the compiler lays out one
+-- branch for both, keys its layout by name and its safety table by site id,
+-- so it needs no binder in a branch, every name bound once, and a site id
+-- per surface drop.
+compileFragment :: Program Cyclo -> Either CompileError ()
+compileFragment prog = do
+  either (Left . NotWellTyped . showTypeError) (const (Right ())) (checkProgram prog)
+  case [ st | st <- inBranch False (progTerm prog), binder st ] of
+    (st : _) -> Left (OutsideFragment (stmtWord st ++ " inside an if branch"))
+    []       -> Right ()
+  let names = map fst (progCtx prog) ++ [ x | st <- inBranch True (progTerm prog), Just x <- [stmtBinds st] ]
+  case [ x | (i, x) <- zip [0 :: Int ..] names, x `elem` take i names ] of
+    (x : _) -> Left (OutsideFragment ("the name " ++ x ++ " is bound twice"))
+    []      -> Right ()
+  let sites = [ i | StDrop i _ <- inBranch True (progTerm prog) ]
+  case [ i | (k, i) <- zip [0 :: Int ..] sites, i `elem` take k sites ] of
+    (i : _) -> Left (OutsideFragment ("two drops carry the site id " ++ show i))
+    []      -> Right ()
+  where
+    -- the statements of a surface term: with True all of them, with False
+    -- only those under an if
+    inBranch top t = case t of
+      SReturn _      -> []
+      SDo st m       -> [ st | top ] ++ inBranch top m
+      SIf _ m1 m2    -> inBranch True m1 ++ inBranch True m2
+      SBlock _ m1 m2 -> inBranch top m1 ++ inBranch top m2
+    binder st = case st of
+      StGate {} -> False
+      _         -> True
+    stmtWord st = case st of
+      StNew {}  -> "new"
+      StLoan {} -> "loan"
+      StLift {} -> "lift"
+      StDrop {} -> "drop"
+      StGate {} -> "gate"
 
 -- ---------------------------------------------------------------------
 -- Layout: qubits, classical bits, and every drop's lift-depth.
@@ -574,6 +641,7 @@ data LayoutSt = LayoutSt
 
 layoutProgram :: Program Cyclo -> Either CompileError LayoutInfo
 layoutProgram prog = do
+  compileFragment prog
   let vis = progCtx prog
       st0 = LayoutSt 0 0 Map.empty Map.empty Map.empty Map.empty Map.empty Map.empty
   st1 <- foldEither addVis st0 vis
@@ -636,7 +704,7 @@ layoutProgram prog = do
                     Just a  -> st3 { lsLiftAncilla = Map.insert pname a (lsLiftAncilla st3) }
                     Nothing -> st3
         layoutTerm (depth + 1) st4 m
-      If _ m1 _ -> layoutTerm depth st m1  -- resources are branch-invariant (Drop.Lang.Check: no alloc/lift/drop in a branch)
+      If _ m1 _ -> layoutTerm depth st m1  -- resources are branch-invariant ('compileFragment': no alloc/lift/drop in a branch)
 
 -- ---------------------------------------------------------------------
 -- Safety: per drop site, per full record, SAFE (certificate) / UNSAFE /
@@ -646,9 +714,9 @@ layoutProgram prog = do
 -- ---------------------------------------------------------------------
 
 -- | A temporary's certificate is the line it is left constant on
--- ('SafeCert'); a block holding a
+-- ('SafeCert', unchanged from before the loan redesign); a block holding a
 -- loan carries instead the isometry B its drop reclaims with ('SafeIso',
--- B : H_loan -> H_block of the site definition's clause (4) -- square when the block is
+-- B : H_loan -> H_block of the site definition's clause (3) -- square when the block is
 -- its loans and nothing else, taller than wide when temporaries sit beside
 -- them).
 data SafetyOutcome = SafeCert (StateV Cyclo) | SafeIso (Matrix Cyclo)
@@ -686,7 +754,7 @@ aggregate prs = case live of
     allSameLine (x : xs) = all (== x) xs
 
 -- | Every name a loan binds, with its dimension (structural scan; an
--- @if@'s branches are resource-invariant -- Drop.Lang.Check's discipline -- so
+-- @if@'s branches are resource-invariant -- 'compileFragment' -- so
 -- either one, or their union, sees every loan).
 loanBindersOf :: Term a -> [(Name, Int)]
 loanBindersOf term = case term of
@@ -746,13 +814,15 @@ computeSafety prog core siteDepthMap =
       ]
 
     -- The loan path: reuses Drop.Lang.Interp's own loan criterion exactly
-    -- (via 'elabE', valid here since every loan program in this domain is a
-    -- lift-free, rename-free, single-name-drop term), so the emitted
+    -- (via 'elabE'; in this domain a loan is dropped before the first lift
+    -- and the first if, so its verdict at the empty record prefix is its
+    -- verdict on every record), so the emitted
     -- circuit's safety decision is the one and only implementation of the
     -- criterion, not a second one that could drift from it. Only the
-    -- depth-0 (no lift before the loan) case is populated: no program in
-    -- this domain combines a loan with a lift, and 'compileDrop' only ever
-    -- looks up the prefix matching the site's own (structural) depth.
+    -- depth-0 (no lift before the loan) case is populated: 'fragmentSafety'
+    -- refuses every program that drops a loan after a lift or an if before
+    -- this map is asked for, and 'compileDrop' only ever looks up the prefix
+    -- matching the site's own (structural) depth.
     loanInfo = Map.fromList
       [ (site, Map.singleton ([] :: [(Name, Int)]) (loanOutcomeFor names))
       | (site, names) <- Map.toList dTargets, any (`elem` loanNames) names
@@ -765,6 +835,60 @@ computeSafety prog core siteDepthMap =
           Nothing -> UnsafeOutcome
         Unreachable -> UnreachableOutcome
         Unsafe -> UnsafeOutcome
+
+-- ---------------------------------------------------------------------
+-- The fragment's conditions on drops, checked before any drop is emitted.
+-- ---------------------------------------------------------------------
+
+-- | Every drop naming a loan that follows a lift or sits in an arm of an
+-- if, once each. The loan criterion ('computeSafety', through
+-- Drop.Lang.Interp.loanResultS) runs the expanded term with no lift
+-- outcomes, and the expansion copies an if's continuation into both arms,
+-- where Drop.Lang.Interp.runStmts does not look for the site; so these
+-- drops have no verdict here, and asking for one stops the program.
+lateLoanDrops :: [Name] -> Term a -> [[Name]]
+lateLoanDrops loans = nub . go False
+  where
+    go _ (Return _) = []
+    go late (Do (StDrop _ v) m)
+      | late, any (`elem` loans) (valueNames v) = valueNames v : go late m
+    go _ (Do (StLift {}) m) = go True m
+    go late (Do _ m) = go late m
+    go _ (If _ m1 m2) = go True m1 ++ go True m2
+
+-- | Every drop naming an input not marked @loan@ whose site is safe, with a
+-- nonzero site map, on some record: 'isSafe' counts 'SafeCert' and 'SafeIso' only, and a
+-- record on which the site map is zero is 'UnreachableOutcome', which does not
+-- count (unmunreach.s compiles). A reclaiming gate returns a temporary to its allocation state and
+-- hands a loan back to the caller; such an input has neither, so no
+-- reclaiming gate is defined for it. An unsafe drop of one emits no gate,
+-- like any unsafe drop, and is not refused.
+unmarkedSafeDrops :: [(Name, Int)] -> Term a -> SafetyInfo -> [[Name]]
+unmarkedSafeDrops vis core safety =
+  [ names
+  | (site, names) <- Map.toList (dropTargetsOf core)
+  , any (`elem` map fst vis) names
+  , any isSafe (Map.elems (Map.findWithDefault Map.empty site safety)) ]
+  where
+    isSafe (SafeCert _) = True
+    isSafe (SafeIso _)  = True
+    isSafe _            = False
+
+-- | The safety map of a program in the fragment, or the refusal of its
+-- first drop outside it. The late loans are refused first, before the map
+-- is built: the map is strict, and building it asks for their verdicts.
+fragmentSafety :: Program Cyclo -> Term Cyclo -> LayoutInfo -> Either CompileError SafetyInfo
+fragmentSafety prog core layout =
+  case lateLoanDrops (map fst (loanBindersOf core)) core of
+    (xs : _) -> Left (DropOutsideFragment xs
+                  "it drops a loan after a lift or an if, and this compiler decides a loan's drop only before both")
+    [] ->
+      let safety = computeSafety prog core (liSiteDepth layout)
+      in case unmarkedSafeDrops (progCtx prog) core safety of
+           (xs : _) -> Left (DropOutsideFragment xs
+                         "it drops an input not marked loan at a site that is safe, with a nonzero site \
+                         \map, on some record, and a reclaiming gate is defined only for temporaries and loans")
+           [] -> Right safety
 
 -- ---------------------------------------------------------------------
 -- QASM text helpers
@@ -852,7 +976,7 @@ diagOfList xs = [ [ if i == j then xs !! i else 0 | j <- [0 .. n - 1] ] | i <- [
   where n = length xs
 
 -- | H, X, Z, S, T, CX, CCX, Swap, Diff, cz by exact match against the
--- artifact's own table (Drop.Lang.Gates), plus cp(theta) for a general
+-- gate table (Drop.Lang.Gates), plus cp(theta) for a general
 -- diag(1,1,1,z) on two qubits.
 recognizeGate :: Matrix Cyclo -> Maybe String
 recognizeGate g
@@ -986,7 +1110,7 @@ compileGate names wireQ mat = do
         | otherwise -> Left (GateNotInDomain names "not diagonal, a permutation, or a single-qubit unitary")
 
 -- ---------------------------------------------------------------------
--- new: clean preparation, or a dirty loan as an input register.
+-- new: clean preparation, or a non-basis temporary whose preparation is assumed.
 -- ---------------------------------------------------------------------
 
 basisIndexOfExact :: StateV Cyclo -> Maybe Int
@@ -1001,7 +1125,7 @@ compileNew x d psi qs = case basisIndexOfExact psi of
         bits = bitsOfIndex k i0
     in [ "x " ++ qArg q ++ ";" | (q, b) <- zip qs bits, b == 1 ]
   Nothing ->
-    [ "// input register " ++ x ++ ", assumed to arrive in psi = (" ++ intercalate ", " (map showC psi) ++ ")" ]
+    [ "// temporary " ++ x ++ ", preparation of psi assumed (not emitted): (" ++ intercalate ", " (map showC psi) ++ ")" ]
   where showC c = show (toC c)
 
 -- | A loan: an input register with no declared state at all (unlike
@@ -1078,6 +1202,9 @@ compileDrop layout safety fixedBits site names = do
   -- caller holds), so it contributes the scalar 1: 'psi' is the allocation
   -- state of the block's temporaries, in the drop's order.
   psi <- Right (foldr kron [1] [ Map.findWithDefault [1] n (liWireAlloc layout) | n <- names ])
+  -- A register without an allocation vector is a loan or an input not
+  -- marked loan; 'fragmentSafety' has refused every safe site naming the
+  -- latter, so at a site that emits a gate it is a loan.
   let isLoan n = not (Map.member n (liWireAlloc layout))
       kinds  = [ (Map.findWithDefault 1 n (liWireDim layout), isLoan n) | n <- names ]
       qsLoan = concat [ Map.findWithDefault [] n (liWireQ layout) | n <- names, isLoan n ]
@@ -1155,7 +1282,7 @@ compileDrop layout safety fixedBits site names = do
     -- | A block holding a loan reclaims with B^dagger directly: unlike a
     -- temporary, there is no known psi to reflect from, so the reclaiming proposition's
     -- Householder construction does not apply -- the block factor B of
-    -- the site definition's clause (4) already is the map the drop needs undone. B is
+    -- the site definition's clause (3) already is the map the drop needs undone. B is
     -- fixed only up to a positive scale by the factorization
     -- (Drop.Lang.Interp.loanResultS), so it is normalised before any angle is
     -- read off it ('normaliseSquareIso').
@@ -1208,34 +1335,38 @@ compileDrop layout safety fixedBits site names = do
 -- Structural recursion, emission.
 -- ---------------------------------------------------------------------
 
-compileTerm :: LayoutInfo -> SafetyInfo -> [(Name, Int)] -> Term Cyclo -> Either CompileError [String]
-compileTerm layout safety fixedBits term = case term of
-  Return _ -> Right []
+-- | @atReturn@ is what a @return@ emits where it stands: nothing when every
+-- branch returns the same value (the output measurements then follow the
+-- whole body, once), the output measurements of its own value otherwise.
+compileTerm :: LayoutInfo -> SafetyInfo -> (Value -> [String]) -> [(Name, Int)] -> Term Cyclo
+            -> Either CompileError [String]
+compileTerm layout safety atReturn fixedBits term = case term of
+  Return v -> Right (atReturn v)
   Do (StGate g v) m -> do
     gl <- compileGate (valueNames v) (liWireQ layout) g
-    rest <- compileTerm layout safety fixedBits m
+    rest <- compileTerm layout safety atReturn fixedBits m
     Right (gl ++ rest)
   Do (StNew nm d psi) m -> do
     let qs = Map.findWithDefault [] nm (liWireQ layout)
-    rest <- compileTerm layout safety fixedBits m
+    rest <- compileTerm layout safety atReturn fixedBits m
     Right (compileNew nm d psi qs ++ rest)
   Do (StLoan nm _) m -> do
-    rest <- compileTerm layout safety fixedBits m
+    rest <- compileTerm layout safety atReturn fixedBits m
     Right (compileLoan nm ++ rest)
   Do (StDrop site v) m -> do
     dl <- compileDrop layout safety fixedBits site (valueNames v)
-    rest <- compileTerm layout safety fixedBits m
+    rest <- compileTerm layout safety atReturn fixedBits m
     Right (dl ++ rest)
   Do (StLift pname s x) m -> do
     ll <- compileLift layout pname x s
-    rest <- compileTerm layout safety fixedBits m
+    rest <- compileTerm layout safety atReturn fixedBits m
     Right (ll ++ rest)
   If e m1 m2 -> do
     let cond = boolExprOf layout e
         fixed1 = case e of BParam pn -> fixedBits ++ [(pn, 1)]; _ -> fixedBits
         fixed2 = case e of BParam pn -> fixedBits ++ [(pn, 0)]; _ -> fixedBits
-    l1 <- compileTerm layout safety fixed1 m1
-    l2 <- compileTerm layout safety fixed2 m2
+    l1 <- compileTerm layout safety atReturn fixed1 m1
+    l2 <- compileTerm layout safety atReturn fixed2 m2
     Right (["if (" ++ cond ++ ") {"] ++ indent l1 ++ ["} else {"] ++ indent l2 ++ ["}"])
 
 -- ---------------------------------------------------------------------
@@ -1244,9 +1375,11 @@ compileTerm layout safety fixedBits term = case term of
 
 -- | The header is built after the body, because the only gate this emitter
 -- declares itself -- Grover's diffusion -- is declared only when the body
--- actually calls it.  Everything else comes from @stdgates.inc@.
-buildHeader :: LayoutInfo -> [Name] -> [String] -> [String]
-buildHeader layout visNames body =
+-- actually calls it.  Everything else comes from @stdgates.inc@. The
+-- comments name the input registers' qubits; @width@ is the returned
+-- value's qubit count, and a program that returns @()@ declares no @result@.
+buildHeader :: LayoutInfo -> [Name] -> Int -> [String] -> [String]
+buildHeader layout visNames width body =
   [ "OPENQASM 3.0;"
   , "include \"stdgates.inc\";"
   , ""
@@ -1256,20 +1389,35 @@ buildHeader layout visNames body =
      | usesDiff ]
   ++ [ "qubit[" ++ show (liTotalQubits layout) ++ "] q;" ]
   ++ [ "bit[" ++ show (liTotalBits layout) ++ "] c;" | liTotalBits layout > 0 ]
-  ++ [ "bit[" ++ show (length (concatMap wireQubits visNames)) ++ "] result;", "" ]
-  ++ [ "// q[" ++ show q ++ "] = " ++ n | n <- visNames, q <- wireQubits n ]
+  ++ [ "bit[" ++ show width ++ "] result;" | width > 0 ]
+  ++ [""]
+  ++ [ "// q[" ++ show q ++ "] = " ++ n | n <- visNames, q <- wireQubits layout n ]
   ++ [""]
   where
-    wireQubits n = Map.findWithDefault [] n (liWireQ layout)
     -- Token match, not a substring: a line reading "diff q[0], q[1];" counts,
     -- a comment mentioning "difference" does not.
     usesDiff = any (elem "diff" . identifiers) body
     identifiers = words . map (\ch -> if isAlphaNum ch || ch == '_' then ch else ' ')
 
-finalMeasureLines :: LayoutInfo -> [Name] -> [String]
-finalMeasureLines layout visNames =
-  [ "result[" ++ show i ++ "] = measure " ++ qArg q ++ ";" | (i, q) <- zip [0 :: Int ..] qs ]
-  where qs = concatMap (\n -> Map.findWithDefault [] n (liWireQ layout)) visNames
+wireQubits :: LayoutInfo -> Name -> [Int]
+wireQubits layout n = Map.findWithDefault [] n (liWireQ layout)
+
+-- | The output measurements: the registers the returned value names, in its
+-- order, one @result@ bit per qubit. A register the header does not name
+-- (it names the inputs) is named here, in the header's own form, so that
+-- every register the file measures is named in it.
+outputMeasureLines :: LayoutInfo -> [Name] -> Value -> [String]
+outputMeasureLines layout inputs v =
+  [ "// q[" ++ show q ++ "] = " ++ n | n <- names, n `notElem` inputs, q <- wireQubits layout n ]
+  ++ [ "result[" ++ show i ++ "] = measure " ++ qArg q ++ ";"
+     | (i, q) <- zip [0 :: Int ..] (concatMap (wireQubits layout) names) ]
+  where names = valueNames v
+
+-- | The value each leaf of a term returns, left to right.
+returnsOf :: Term a -> [Value]
+returnsOf (Return v)   = [v]
+returnsOf (Do _ m)     = returnsOf m
+returnsOf (If _ m1 m2) = returnsOf m1 ++ returnsOf m2
 
 -- | Every lift's classical bit index and the qasm-measured value that means
 -- "the block survived" -- exported so a checker can translate
@@ -1282,7 +1430,7 @@ liftInfoOf prog = do
   Right [ (n, idx, sv) | (n, (idx, sv)) <- Map.toList (liLiftInfo layout) ]
 
 -- | Every 'new'-allocated wire's physical qubits and its allocation vector
--- psi -- so a checker can seed a dirty (non-basis) loan's qubits at psi
+-- psi -- so a checker can seed a non-basis temporary's qubits at psi
 -- directly, since (by the domain's own rule) 'compile' emits no
 -- preparation gates for it. A wire whose psi is a computational basis
 -- state needs no such seeding: its qubits already start at the qubit
@@ -1347,7 +1495,7 @@ expectedFinalState layout safety leaf = foldl applyReclaim (map toC (cfgAmp leaf
                  -- The theorem's target is the branch map with the reclaiming
                  -- gate at every site the emitter has a clause for
                  -- (the per-record compilation theorem: "each emittable with its certificate").
-                 -- Every SafeCert site is emittable: the one-qubit clause,
+                 -- Every SafeCert site is now emittable: the one-qubit clause,
                  -- the basis-state transposition, the proportional (R = I)
                  -- clause, and the general k-qubit reclaiming
                  -- reflection of 'emitGeneralReflectionOps' between them cover
@@ -1393,8 +1541,8 @@ leavesWithExpected :: Program Cyclo -> StateV Cyclo -> Either CompileError [(Con
 leavesWithExpected prog inp = do
   layout <- layoutProgram prog
   let core = toTerm (progTerm prog)
-      safety = computeSafety prog core (liSiteDepth layout)
-      -- Every loan seeded at |0>, matching the emitted circuit's own qubit
+  safety <- fragmentSafety prog core layout
+  let -- Every loan seeded at |0>, matching the emitted circuit's own qubit
       -- register (no preparation gate is emitted for a loan, so its
       -- physical qubits start at OpenQASM's own |0>): this leaf export is
       -- an internal check that the emitted circuit matches this reference
@@ -1405,11 +1553,36 @@ leavesWithExpected prog inp = do
       leaves = run (initConfigL (progCtx prog) inp loanEnv0 core)
   Right [ (leaf, expectedFinalState layout safety leaf) | leaf <- leaves ]
 
+-- | The circuit, ending in the measurement of what the program returns. When
+-- every branch returns the same value -- every program the parser reads,
+-- since a surface branch returns exactly the registers it was handed -- the
+-- output measurements follow the whole body once. When the branches return
+-- different values, each branch measures its own at its @return@. Either way
+-- @result[i]@ holds the i-th qubit of the value returned on the run taken;
+-- a loan is never returned (Drop.Lang.Check.loanDiscipline), so never measured.
 compile :: Program Cyclo -> Either CompileError String
 compile prog = do
   layout <- layoutProgram prog
   let core = toTerm (progTerm prog)
-      safety = computeSafety prog core (liSiteDepth layout)
-      visNames = map fst (progCtx prog)
-  body <- compileTerm layout safety [] core
-  Right (unlines (buildHeader layout visNames body ++ body ++ [""] ++ finalMeasureLines layout visNames))
+  safety <- fragmentSafety prog core layout
+  let visNames = map fst (progCtx prog)
+      rets = returnsOf core
+      widthOf v = length (concatMap (wireQubits layout) (valueNames v))
+      width = case rets of { (v : _) -> widthOf v; [] -> 0 }
+      uniform = case rets of { (v : vs) -> all (== v) vs; [] -> True }
+      measure = outputMeasureLines layout visNames
+  if all ((== width) . widthOf) rets then Right ()
+    else Left (Other "Drop.Lang.Compile: the branches return values of different sizes (not a typed program)")
+  body <- compileTerm layout safety (if uniform then const [] else measure) [] core
+  let final = case rets of
+        (v : _) | uniform, not (null (measure v)) -> "" : measure v
+        _ -> []
+  Right (unlines (buildHeader layout visNames width body ++ body ++ final))
+
+-- | The physical qubits of every register the layout names -- inputs,
+-- allocations and loans -- so a checker can map a returned value's names
+-- to the qubits its @result@ bits must read.
+wireQubitsOf :: Program Cyclo -> Either CompileError [(Name, [Int])]
+wireQubitsOf prog = do
+  layout <- layoutProgram prog
+  Right (Map.toList (liWireQ layout))

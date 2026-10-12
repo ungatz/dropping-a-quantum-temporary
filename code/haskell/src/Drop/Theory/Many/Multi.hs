@@ -65,7 +65,8 @@ mTemporaries p = [ (t,d,i0) | MNew t d i0 <- mStmts p ]
 -- vector, temporaries in allocation order then the visible register. Drops
 -- are the identity: they only remove a name.
 runMulti :: MProgram -> Vec -> Vec
-runMulti p v0 = go (names0, dims0, psi0) (mStmts p)
+runMulti p v0 = either (error . ("runMulti: " ++) . show) (const (go (names0, dims0, psi0) (mStmts p)))
+                       (scopeCheck p)
   where
     names0 = [mVis p]
     dims0  = [mVisDim p]
@@ -101,9 +102,19 @@ data BundleError
   | AllocatedTwice Name
     -- ^ the same name is allocated twice without an intervening drop.
   | ReallocatedAfterDrop Name
-    -- ^ the name is allocated again after being dropped; the language
+    -- ^ the name is allocated again after being dropped; the calculus
     -- allows this, but bundling gives each allocation its own tensor
     -- factor, so rename and bundle again.
+  | BadAllocation Name Int Int
+    -- ^ @new@ with a dimension below 1 or an index outside @[0..d-1]@:
+    -- the New rule's premises ('Drop.Theory.Program.Typing').
+  | RegisterTwiceInGate String Name
+    -- ^ a gate names one register twice.
+  | GateWrongShape String [Name] Int
+    -- ^ a gate whose matrix is not square of side the product of its
+    -- registers' dimensions (the side is given).
+  | GateNotUnitaryM String
+    -- ^ a gate whose matrix is not unitary.
   deriving (Eq)
 
 instance Show BundleError where
@@ -121,6 +132,14 @@ instance Show BundleError where
   show (DroppedTwice t) = "the temporary " ++ show t ++ " is dropped twice"
   show (AllocatedTwice t) =
     "the name " ++ show t ++ " is allocated twice without an intervening drop"
+  show (BadAllocation t d i0) =
+    "new " ++ show t ++ " has dimension " ++ show d ++ " and allocation index "
+    ++ show i0 ++ "; a register has at least one level and the index is one of them"
+  show (RegisterTwiceInGate g x) =
+    "gate " ++ g ++ " names the register " ++ show x ++ " twice"
+  show (GateWrongShape g xs n) =
+    "gate " ++ g ++ " on " ++ show xs ++ " is not a square matrix of side " ++ show n
+  show (GateNotUnitaryM g) = "gate " ++ g ++ " is not unitary"
   show (ReallocatedAfterDrop t) =
     "the name " ++ show t ++ " is allocated again after being dropped; "
     ++ "bundling gives each allocation its own factor, so rename the second"
@@ -130,23 +149,37 @@ instance Show BundleError where
 -- temporary only between its @new@ and @drop@, no name is allocated or
 -- dropped twice, and the visible register stays in scope. This is the
 -- hypothesis 'bundle' needs to move every drop to the end.
+--
+-- It also checks the premises the core checker states for one temporary
+-- (Drop.Theory.Program.Typing): an allocation index among the register's
+-- levels, and a gate that is a unitary of the right size on distinct
+-- registers. Bundling builds a well-shaped core gate out of any matrix it
+-- is given, so after 'bundle' the core checker can no longer see these.
 scopeCheck :: MProgram -> Either BundleError ()
 scopeCheck p = go [] [] (mStmts p)
   where
     go _ _ [] = Right ()
-    go live dead (MNew t _ _ : rest)
-      | t `elem` live = Left (AllocatedTwice t)
+    go live dead (MNew t d i0 : rest)
+      | t `elem` map fst live = Left (AllocatedTwice t)
       | t `elem` dead = Left (ReallocatedAfterDrop t)
-      | otherwise     = go (t : live) dead rest
+      | d < 1 || i0 < 0 || i0 >= d = Left (BadAllocation t d i0)
+      | otherwise     = go ((t, d) : live) dead rest
     go live dead (MDrop t : rest)
       | t `elem` dead   = Left (DroppedTwice t)
-      | t `notElem` live = Left (DroppedButNotAllocated [t])
-      | otherwise       = go (filter (/= t) live) (t : dead) rest
-    go live dead (MApply nm _ xs : rest) =
-      case [ x | x <- xs, x /= mVis p, x `notElem` live ] of
+      | t `notElem` map fst live = Left (DroppedButNotAllocated [t])
+      | otherwise       = go (filter ((/= t) . fst) live) (t : dead) rest
+    go live dead (MApply nm g xs : rest) =
+      case [ x | x <- xs, x /= mVis p, x `notElem` map fst live ] of
         (x : _) | x `elem` dead -> Left (GateOnDeadRegister nm x)
                 | otherwise     -> Left (GateBeforeAllocation nm x)
-        []                      -> go live dead rest
+        []
+          | (x : _) <- [ x | (i, x) <- zip [0 :: Int ..] xs, x `elem` take i xs ] ->
+              Left (RegisterTwiceInGate nm x)
+          | length g /= n || any ((/= n) . length) g -> Left (GateWrongShape nm xs n)
+          | not (matIsUnitary g) -> Left (GateNotUnitaryM nm)
+          | otherwise -> go live dead rest
+          where
+            n = product [ if x == mVis p then mVisDim p else maybe 0 id (lookup x live) | x <- xs ]
 
 -- | The composition elaboration: many temporaries in, one temporary out.
 -- Composite dimension @D = product d_i@, allocated at the mixed-radix index

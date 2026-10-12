@@ -17,16 +17,14 @@ import Drop.Lang.QState
 import Drop.Lang.Syntax
 import Drop.Lang.Interp
 import Drop.Lang.Pass
-import Drop.Lang.Parser (parseProgram, renderCmd)
-import Drop.Lang.Report.Run (wellFormed)
+import Drop.Lang.Parser (renderCmd)
+import Drop.Lang.Report.Run (surfaceProgram)
 import Drop.Lang.Report.Trace (showTrace, showVec)
 
 passText :: String -> Either String String
 passText src = do
-  (vis, prog) <- parseProgram src
-  case wellFormed prog of
-    Just err -> Left err
-    Nothing  -> Right (unlines (concatMap (explainSite vis prog) (dropSites prog)))
+  (vis, prog) <- surfaceProgram src
+  Right (unlines (concatMap (explainSite vis prog) (dropSites prog)))
 
 -- | The pass chain is stated one register at a time (Drop.Lang.Pass.Cut), so a
 -- tuple drop -- one site (the composite-temporary proposition) -- is declined by name here

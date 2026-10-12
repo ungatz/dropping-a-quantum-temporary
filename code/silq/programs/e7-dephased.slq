@@ -1,9 +1,0 @@
-// A superposition that is then measured: the register is classical at the
-// point of discard even though its producer, H, is not qfree.
-def main(){
-	x := H(0:𝔹);
-	b := measure(x);
-	y := b;
-	forget(y=b);
-	return b;
-}

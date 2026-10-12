@@ -5,7 +5,7 @@
 -- 'cfgAmp' is sigma in [[Delta]], unnormalised, and 'cfgTerm' is M. There is
 -- no hidden set. The hidden registers are the allocated ones the term no
 -- longer names ('cfgHidden'), which along any run are exactly the ones the
--- run has dropped (the hidden-register invariant, checked in TypedSpec (p)).
+-- run has dropped (the type-safety theorem's clause (5), checked in TypedSpec (o)).
 --
 -- Five rules fire, each at the head of M:
 --
@@ -43,7 +43,7 @@ module Drop.Lang.Machine
   , finalType
   ) where
 
-import Data.List (elemIndex, (\\))
+import Data.List (elemIndex, nub, (\\))
 import Drop.Lang.QState
 import Drop.Lang.Typed
 
@@ -88,7 +88,7 @@ isFinal cfg = case cfgTerm cfg of
   _        -> False
 
 -- | The term's own register context: the allocated registers the term still
--- names. The hidden-register invariant says this is the allocated registers minus the
+-- names. The type-safety theorem's clause (5) says this is the allocated registers minus the
 -- ones the run has dropped.
 ctxOf :: Config a -> [(Name, Int)]
 ctxOf cfg = [ (x, d) | (x, d) <- zip (cfgNames cfg) (cfgDims cfg), x `elem` live ]
@@ -120,7 +120,7 @@ dimOf cfg x = cfgDims cfg !! posOf cfg x
 
 -- | \\textsc{Step-New} at an EXPLICITLY CHOSEN name @w@: 'Nothing' when
 -- either side condition fails -- @w@ already in Delta, or @w@ bound in the
--- continuation. The second is the one the machine figure spells out: on
+-- continuation. The second is the one the printed rule used to lack: on
 -- @new 5; new 7; return (5,7)@, choosing @w = 7@ at the first allocation
 -- makes @M[7/5]@ name one register twice, and this returns 'Nothing' rather
 -- than cloning it.
@@ -160,11 +160,18 @@ allocName cfg t m = fresh (cfgNames cfg ++ boundIn m) t
 -- | One machine step. [] at a value (final); one successor at a gate, an
 -- allocation, a drop or an `if`; two labelled successors (b = 1 then b = 0)
 -- at a lift.
+--
+-- A term that never met the checker may name a register the run has
+-- already dropped. A drop changes nothing in sigma, so the step would go
+-- through and a later criterion would read a state the program was not
+-- allowed to touch; the machine refuses such a step by name instead, and
+-- also a drop that names one register twice and a lift whose block is not
+-- a nonempty proper set of the register's levels.
 step :: Num a => Config a -> [Config a]
 step cfg = case cfgTerm cfg of
   Return _ -> []
 
-  Do (StGate g v) m ->
+  Do (StGate g v) m | usable "gate" (valueNames v) ->
     let positions = map (posOf cfg) (valueNames v)
         amp'      = applyGate (cfgDims cfg) g positions (cfgAmp cfg)
     in [ cfg { cfgAmp = amp', cfgTerm = m } ]
@@ -176,12 +183,12 @@ step cfg = case cfgTerm cfg of
   -- text names; it allocates under its header name exactly as `new` does.
   Do (StLoan a _) m -> maybe [] (: []) (stepNewAt (allocName cfg a m) cfg)
 
-  Do (StDrop site v) m ->
+  Do (StDrop site v) m | usable "drop" (valueNames v) ->
     let names = valueNames v
         rec_  = SiteRecord site names (cfgNames cfg) (cfgDims cfg) (cfgAmp cfg)
     in [ cfg { cfgSites = cfgSites cfg ++ [rec_], cfgTerm = m } ]
 
-  Do (StLift p s x) m ->
+  Do (StLift p s x) m | usable "lift" [x] && goodBlock x s ->
     let pos = posOf cfg x
         d   = cfgDims cfg !! pos
         mkBranch bit keep = cfg
@@ -198,6 +205,29 @@ step cfg = case cfgTerm cfg of
           Just b  -> b == 1
           Nothing -> error ("Drop.Lang.Machine: parameter " ++ nm ++ " not bound")
     in [ cfg { cfgTerm = if evalB env e then m1 else m2 } ]
+
+  -- unreachable: every guard above either holds or calls 'error'
+  _ -> error "Drop.Lang.Machine.step: refused"
+  where
+    dropped = concatMap srHidden (cfgSites cfg)
+    usable what xs
+      | (x : _) <- [ x | x <- xs, x `elem` dropped ] =
+          error ("Drop.Lang.Machine: " ++ what ++ " names register " ++ x
+                 ++ ", which has been dropped")
+      | (x : _) <- [ x | x <- xs, x `notElem` cfgNames cfg ] =
+          error ("Drop.Lang.Machine: " ++ what ++ " names register " ++ x
+                 ++ ", which is not in scope")
+      | length (nub xs) /= length xs =
+          error ("Drop.Lang.Machine: " ++ what ++ " names a register twice in "
+                 ++ unwords xs)
+      | otherwise = True
+    goodBlock x s
+      | null s || any (\l -> l < 0 || l >= d) s || length (nub s) /= length s
+          || length s >= d =
+          error ("Drop.Lang.Machine: the block " ++ show s ++ " of a lift is not a \
+                 \nonempty proper set of the " ++ show d ++ " levels of " ++ x)
+      | otherwise = True
+      where d = dimOf cfg x
 
 -- | Run to every leaf (a root-to-leaf path through the lift labels).
 -- Terminates because every rule strictly shortens the term: the number of

@@ -195,7 +195,7 @@ det m0 = go m0 kone
     dropFirst []     = []
 
 -- | Do all two-by-two minors of a matrix vanish?  Equivalent to
--- @'rank' m <= 1@, and kept separate because the criterion is
+-- @'rank' m <= 1@, and kept separate because the criterion (the criterion section) is
 -- stated in exactly this form, as the vanishing of the cut minors.  Checking
 -- that the two agree on every example is one of the two independent routes to
 -- the criterion (see "Drop.Theory.Criterion").

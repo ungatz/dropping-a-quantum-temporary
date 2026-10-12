@@ -3,31 +3,19 @@ name:               dqt
 version:            0.1.0
 synopsis:           A typed language for quantum temporaries, its checker, and the drop criterion
 description:
-  A self-contained implementation of the language of /Safe to Drop: an Exact
-  Criterion for Quantum Temporaries/: the typed surface language with its
-  checker and five-rule machine, its elaboration to the flat command list, its
-  compiler to OpenQASM 3, and the drop criterion by two independent routes.
+  A typed quantum language, its exact drop-safety criteria, and an OpenQASM 3
+  compiler. The package includes an explicit-matrix theory route and a typed
+  language route that probes states; a bridge compares their verdicts.
   .
-  The package decides one question by two different algorithms.  The theory
-  layer builds the site map as a matrix over Q(zeta_8), forms its Kraus blocks
-  and its Gram matrix, and takes an exact rank; the language layer never builds
-  the matrix, and probes instead.  Drop.Bridge runs the two against each other.
-  They share the scalar field, so what the comparison holds fixed is the
-  arithmetic and what it varies is the algorithm.
-  .
-  Exact arithmetic throughout, and a check that asserts no inexact numeric
-  type occurs anywhere in the sources.  Reading order is in README.md.
+  Verdicts use exact algebraic arithmetic. OpenQASM emission uses numeric
+  angles where needed; the separate simulator comparison is numerical.
 license:            MIT
 license-file:       LICENSE
 copyright:          (c) 2026 Sanad
-maintainer:         sdkadu@iu.edu
 category:           Language
 build-type:         Simple
 extra-doc-files:    README.md
                     programs/SYNTAX.md
--- The check suite reads the corpus at run time (Drop.Lang.Checks.Parser reads
--- programs/*.s), so a source distribution that omitted these would build and
--- then fail its own tests.
 extra-source-files: programs/*.s
                     test/fixtures/*.s
 
@@ -112,29 +100,25 @@ test-suite dqt-test
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Spec.hs
-    -- `directory` so that the two directory-walking gates report a missing
-    -- directory as a failed check rather than dying with an exception: a
-    -- renamed directory must turn a check red, never crash the suite.
     build-depends:    base, directory, dqt
 
--- The typed surface language: syntax, statics and the five-rule machine,
--- checked against the flat many-register engine through Drop.Lang.Elab. Its own
--- stanza, so it can be run alone.
 test-suite dqt-typed-test
     import:           lang
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          TypedSpec.hs
-    -- containers: task (f)'s trace-preservation check (Sigma_o E_o^dagger
-    -- E_o = I) keys each record's leaf amplitude by (basis index, record)
-    -- in a Data.Map.Strict.
     build-depends:    base, containers, dqt
 
--- Drop.Lang.Compile: OpenQASM 3 compilation of the typed surface language. Its
--- own stanza, so it can be run alone; it writes ../qasm3/out-typed/.
 test-suite dqt-compile-test
     import:           lang
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          CompileSpec.hs
     build-depends:    base, containers, directory, dqt
+
+test-suite dqt-wellformed-test
+    import:           lang
+    type:             exitcode-stdio-1.0
+    hs-source-dirs:   test
+    main-is:          WellFormedSpec.hs
+    build-depends:    base, dqt

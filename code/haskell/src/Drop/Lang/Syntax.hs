@@ -1,6 +1,6 @@
 -- Syntax.hs: abstract syntax of the paper's language.
 --
--- One constructor per construct of the language (the language section, the syntax figure).
+-- One constructor per construct of the calculus (the language section, the syntax figure).
 -- 'Gate' covers every gate statement, named or written out as a matrix,
 -- distinguished by the registers it carries, not by the constructor. 'Drop'
 -- carries no obligation: it is denotationally the identity, so unsafe

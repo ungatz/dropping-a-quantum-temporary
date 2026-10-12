@@ -1,9 +1,0 @@
-// The same program again, but supplying a quantum witness expression, to see
-// whether forget takes a non-qfree witness H(0).  If it does, the drop is
-// expressible with a programmer-supplied discharge; if it does not, the parked
-// state |+> has no spelling at all, a witness having to be a basis value.
-def main(){
-	t := H(0:𝔹);
-	forget(t=H(0:𝔹));
-	return 0:𝔹;
-}

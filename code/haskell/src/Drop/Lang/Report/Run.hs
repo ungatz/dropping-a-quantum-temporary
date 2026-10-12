@@ -7,7 +7,7 @@
 
 module Drop.Lang.Report.Run
   ( Report (..), SiteReport (..), TraceRow (..)
-  , runText, runFile, renderReport, wellFormed, showSite
+  , runText, runFile, renderReport, wellFormed, surfaceProgram, showSite
   , typecheckText, typecheckFile
   , compileText, compileFile
   ) where
@@ -20,7 +20,7 @@ import System.IO (hPutStrLn, stderr)
 import Drop.Lang.Check (TypeError (..), checkProgram, showTypeError)
 import Drop.Lang.Compile (compile, showCompileError)
 import Drop.Lang.Elab (flatToProgramR)
-import Drop.Lang.Ring (Amp (..), Conj (..))
+import Drop.Lang.Ring (Amp (..))
 import Drop.Lang.Cyclo (Cyclo)
 import Drop.Lang.QState
 import Drop.Lang.Syntax
@@ -57,10 +57,22 @@ data Report = Report
 -- | Parse a program text and report on every drop site.
 runText :: String -> Either String Report
 runText src = do
-  (vis, prog) <- parseProgram src
-  case wellFormed prog of
+  (vis, prog) <- surfaceProgram src
+  Right (Report vis prog (map (siteReport vis prog) (dropSites prog)))
+
+-- | Parse a program text and refuse what the language refuses before any
+-- report is made on it: a gate that is not unitary ('wellFormed'), then
+-- everything the statics and the loan discipline refuse ('checkProgram').
+-- @run@, @trace@ and @pass@ all start here, so none of them reports on a
+-- program @typecheck@ rejects.
+surfaceProgram :: String -> Either String (VisSpec, Prog Cyclo)
+surfaceProgram src = do
+  (f, pos) <- parseFileAt src
+  case wellFormed (sfBody f) of
     Just err -> Left err
-    Nothing  -> Right (Report vis prog (map (siteReport vis prog) (dropSites prog)))
+    Nothing  -> case checkProgram (flatToProgramR (sfVis f) (sfReturn f) (sfBody f)) of
+      Left e  -> Left (atLine pos e ++ "type error: " ++ showTypeError e)
+      Right _ -> Right (sfVis f, sfBody f)
 
 siteReport :: VisSpec -> Prog Cyclo -> Site -> SiteReport
 siteReport vis prog x = SiteReport x d [ row sel | sel <- allSelections d ]
@@ -68,7 +80,7 @@ siteReport vis prog x = SiteReport x d [ row sel | sel <- allSelections d ]
     d    = liftDepthBeforeS prog x
     pre  = prefixThroughS prog x
     -- A block holding a loan -- one loan, several, or a loan beside
-    -- temporaries -- is decided by the site definition's clause (4) and certified by the
+    -- temporaries -- is decided by the site definition's clause (3) and certified by the
     -- block factor B, not by a fixed line (Drop.Lang.Interp.loanResultS).
     loan = any (isLoanTargetS pre x) x
     row sel = TraceRow sel v
@@ -204,7 +216,7 @@ die msg = hPutStrLn stderr msg >> exitFailure
 -- | The grammar's own rules -- one binder per name, and no binder inside a
 -- branch -- are the parser's, so a program that reaches here has passed them.
 -- What is left is a gate matrix the theory does not cover.
--- A block holding a loan is not among them: the site definition's clause (4) is
+-- A block holding a loan is no longer among them: the site definition's clause (3) is
 -- stated for the whole block (sigma_s = B (x) W with B : H_loan -> H_block
 -- an isometry, rectangular when temporaries sit beside the loans), and
 -- Drop.Lang.Interp.loanResultS decides it there.
@@ -224,13 +236,3 @@ wellFormed prog =
 
 showMat :: Amp a => [[a]] -> String
 showMat m = "{ " ++ intercalate " ; " [ intercalate ", " (map showAmp r) | r <- m ] ++ " }"
-
--- | U U^H = I, exactly.  There is no tolerance, because the whole package is
--- exact arithmetic.
-isUnitary :: (Eq a, Fractional a, Conj a) => [[a]] -> Bool
-isUnitary u =
-  let n = length u
-  in all ((== n) . length) u
-     && and [ row i j == (if i == j then 1 else 0) | i <- [0 .. n-1], j <- [0 .. n-1] ]
-  where
-    row i j = sum [ (u !! i !! k) * conj (u !! j !! k) | k <- [0 .. length u - 1] ]

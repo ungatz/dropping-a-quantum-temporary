@@ -1,6 +1,5 @@
--- copy-input.s: the program of the statics subsection -- it copies its input into a
--- temporary and forgets the input.  Token-identical to the inline listing
--- there.  It types, and the criterion calls its drop unsafe.
+-- copy-input.s: copies its input into a temporary and forgets the input.
+-- The program is well typed, but its drop is unsafe.
 --
 -- Site: drop x (depth 0).  Expected: UNSAFE.
 

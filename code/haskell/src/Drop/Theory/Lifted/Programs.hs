@@ -1,8 +1,8 @@
 -- |
 -- Module      : Drop.Theory.Lifted.Programs
 --
--- The lifted programs the paper discusses: the witness no record-oblivious
--- verdict can serve, the same text with the read deleted, the qubit that splits
+-- The lifted programs the paper discusses: the witness no static analysis
+-- can serve, the same text with the read deleted, the qubit that splits
 -- after a joint gate, and the pair of programs with one channel and two
 -- verdicts. Values of the syntax in "Drop.Theory.Lifted".
 module Drop.Theory.Lifted.Programs
@@ -19,7 +19,7 @@ import Drop.Theory.Algebra.Scalar
 import Drop.Theory.Program.Syntax
 import Drop.Theory.Lifted
 
--- | The witness no record-oblivious verdict can serve: identical branches under a
+-- | The witness no static analysis can serve: identical branches under a
 -- lift, so the conditional computes nothing.
 --
 -- > let t = new |0> in

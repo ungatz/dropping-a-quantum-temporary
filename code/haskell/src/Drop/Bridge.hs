@@ -91,7 +91,12 @@ data SProgram = SProgram
 --
 -- Allocation index handled, not assumed away: @i0 /= 0@ gets a
 -- transposition carrying @0@ to @i0@ right after allocation.
+--
+-- A program the theory's checker refuses has no translation: the flat
+-- engine would answer on it, and its answer would be about a program the
+-- theory says is not one.
 toS :: Program -> Maybe SProgram
+toS p | Left _ <- checkProgram p = Nothing
 toS p = case progTerm p of
   New t d i0 body ->
     Just SProgram
@@ -184,7 +189,7 @@ bridgeReport = unlines $
 -- The Second Cross-Check: Two Runtime Checks
 
 -- | Two runtime checks, sharing no code: "Drop.Theory.Residual" over the lifted
--- language, "Drop.Lang.Pass" over the machine.
+-- calculus, "Drop.Lang.Pass" over the machine.
 --
 -- Each compares itself against its own criterion at every table entry;
 -- this asks what those miss: do the two decline in the same places,

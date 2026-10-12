@@ -30,6 +30,10 @@ data Mach a = Mach
     -- at its own step. Empty from 'initMach', so no existing (loan-free)
     -- caller is affected; a run that reaches a 'Loan' with no entry here is
     -- a caller error (see 'initMachL').
+  , mDropped :: [String]
+    -- ^ the registers dropped so far. A drop is the identity on the state,
+    -- so the state cannot tell a dropped register from a live one; this
+    -- list is what lets the machine refuse a use after the drop.
   } deriving Show
 
 initMach :: VisSpec -> StateV a -> Mach a
@@ -38,7 +42,7 @@ initMach vis amp = initMachL vis amp []
 -- | As 'initMach', but also supplying the state every loan the program
 -- allocates is to arrive on for this run, keyed by name.
 initMachL :: VisSpec -> StateV a -> [(String, StateV a)] -> Mach a
-initMachL vis amp loans = Mach (map fst vis) (map snd vis) amp [] [] loans
+initMachL vis amp loans = Mach (map fst vis) (map snd vis) amp [] [] loans []
 
 regPos :: Mach a -> String -> Int
 regPos m x = case elemIndex x (mNames m) of
@@ -55,8 +59,136 @@ duplicateName what x =
   error (what ++ ": register " ++ x ++ " is already in scope; a name is \
          \allocated once, and reuse of the wire is the allocator's business")
 
+-- Well-formedness of the flat form
+--
+-- The parser refuses an ill-formed program by name, but a 'Prog' built
+-- directly as a list of commands never meets the parser, and the machine
+-- below would answer on it: a drop is the identity on the state, so a gate
+-- after a drop runs, and the criterion calls the drop safe. So the machine
+-- checks the rules the parser enforces on every program it runs, and
+-- refuses by name the way 'duplicateName' does.
+--
+-- Two fragments. The surface fragment is what the parser produces: no
+-- binder (a new, a loan, a lift or a drop) inside an if branch. The
+-- elaborated fragment is what 'Drop.Lang.Elab.elabE' produces from a typed
+-- term, whose If rule lets an arm allocate, lift and drop; there each arm is
+-- checked on its own path. A drop site is looked for among the top-level
+-- commands only, so a run that stops at a site needs the surface fragment.
+
+-- | What is in scope at a point of a flat program: the live registers with
+-- their dimensions, the dropped ones, and the lifted parameters.
+data FlatScope = FlatScope
+  { fsLive    :: [(String, Int)]
+  , fsDropped :: [String]
+  , fsParams  :: [String]
+  } deriving (Eq, Show)
+
+data Fragment = SurfaceFragment | ElaboratedFragment deriving (Eq, Show)
+
+-- | The scope a machine is in.
+machScope :: Mach a -> FlatScope
+machScope m =
+  FlatScope [ (x, d) | (x, d) <- zip (mNames m) (mDims m), x `notElem` mDropped m ]
+            (mDropped m) (map fst (mStore m))
+
+-- | The scope at the start of a program with these visible registers.
+visScope :: VisSpec -> FlatScope
+visScope vis = FlatScope vis [] []
+
+-- | One command that is not an 'IfBit', checked against the scope before
+-- it, giving the scope after it.
+checkCmd :: FlatScope -> Cmd a -> Either String FlatScope
+checkCmd sc c = case c of
+  New x d          -> bind "new" x d
+  NewState x d st
+    | length st /= d -> Left ("new " ++ x ++ " : [" ++ show d ++ "] needs " ++ show d
+                              ++ " amplitudes, got " ++ show (length st))
+    | otherwise      -> bind "new" x d
+  Loan x d         -> bind "loan" x d
+  Gate g xs -> do
+    ds <- mapM (live "gate") xs
+    distinct "gate" xs
+    let n = product ds
+    if length g == n && all ((== n) . length) g then Right sc
+      else Left ("gate on " ++ unwords xs ++ ": a matrix of " ++ show (length g)
+                 ++ " rows does not act on registers of total dimension " ++ show n)
+  Drop xs -> do
+    _ <- mapM (live "drop") xs
+    distinct "drop" xs
+    Right sc { fsLive = [ r | r@(y, _) <- fsLive sc, y `notElem` xs ]
+             , fsDropped = fsDropped sc ++ xs }
+  Lift p x block -> do
+    d <- live "lift" x
+    if p `elem` fsParams sc
+      then Left ("lift: parameter " ++ p ++ " is already bound; this machine \
+                 \reads the latest binding and the static pass reads the \
+                 \first, so a second one would make the two disagree")
+      else Right ()
+    if null block || any (\l -> l < 0 || l >= d) block || length (nubS block) /= length block
+         || length block >= d
+      then Left ("lift " ++ x ++ ": the block " ++ show block ++ " is not a nonempty \
+                 \proper set of the " ++ show d ++ " levels of " ++ x)
+      else Right sc { fsParams = fsParams sc ++ [p] }
+  IfBit {} -> Left "checkCmd: an if is checked by checkFlat"
+  where
+    bind what x d
+      | x `elem` map fst (fsLive sc) = Left (what ++ ": register " ++ x ++ " is already in scope; a name is \
+                                             \allocated once, and reuse of the wire is the allocator's business")
+      | x `elem` fsDropped sc = Left (what ++ ": register " ++ x ++ " has been dropped; a name is \
+                                      \allocated once")
+      | d < 2 = Left (what ++ " " ++ x ++ " : [" ++ show d ++ "]: a register has at least 2 levels")
+      | otherwise = Right sc { fsLive = fsLive sc ++ [(x, d)] }
+    live what x = case lookup x (fsLive sc) of
+      Just d -> Right d
+      Nothing
+        | x `elem` fsDropped sc -> Left (what ++ ": register " ++ x ++ " has been dropped")
+        | otherwise             -> Left (what ++ ": no register " ++ x ++ " in scope")
+    distinct what xs
+      | length (nubS xs) /= length xs = Left (what ++ ": a register is named twice in " ++ unwords xs)
+      | otherwise = Right ()
+
+nubS :: Eq b => [b] -> [b]
+nubS []       = []
+nubS (x : xs) = x : nubS (filter (/= x) xs)
+
+-- | A whole program, checked from a scope, giving the scope at the end of
+-- every path (without repeats). A guard reads only parameters already
+-- lifted; in the surface fragment an arm binds nothing.
+checkFlat :: Fragment -> FlatScope -> Prog a -> Either String [FlatScope]
+checkFlat frag sc0 prog0 = go sc0 prog0
+  where
+    go sc [] = Right [sc]
+    go sc (IfBit g thn els : rest) = do
+      case [ p | p <- guardParams g, p `notElem` fsParams sc ] of
+        (p : _) -> Left ("ifbit: parameter " ++ p ++ " not lifted")
+        []      -> Right ()
+      if frag == SurfaceFragment
+        then case [ c | c <- flatCmds (thn ++ els), binds c ] of
+               (c : _) -> Left ("ifbit: " ++ cmdWord c ++ " inside an if branch; a branch \
+                                \allocates, lifts and drops nothing")
+               []      -> Right ()
+        else Right ()
+      ends <- (++) <$> go sc thn <*> go sc els
+      fmap (nubS . concat) (mapM (\s -> go s rest) (nubS ends))
+    go sc (c : rest) = checkCmd sc c >>= \sc' -> go sc' rest
+    flatCmds = concatMap (\c -> case c of IfBit _ t e -> c : flatCmds (t ++ e); _ -> [c])
+    binds c = case c of
+      New {} -> True; NewState {} -> True; Loan {} -> True; Lift {} -> True; Drop {} -> True
+      _ -> False
+    cmdWord c = case c of
+      Lift {} -> "lift"; Drop {} -> "drop"; Loan {} -> "loan"; _ -> "new"
+
+-- | 'checkFlat', as a refusal.
+requireFlat :: Fragment -> FlatScope -> Prog a -> ()
+requireFlat frag sc prog = either error (const ()) (checkFlat frag sc prog)
+
 step :: (Eq a, Num a) => Mach a -> Cmd a -> Mach a
 step m c = case c of
+  IfBit {} -> stepUnchecked m c
+  _        -> either error (const (stepUnchecked m c)) (checkCmd (machScope m) c)
+
+stepUnchecked :: (Eq a, Num a) => Mach a -> Cmd a -> Mach a
+stepUnchecked m c = case c of
   New x d
     | x `elem` mNames m -> duplicateName "new" x
     | otherwise ->
@@ -81,7 +213,7 @@ step m c = case c of
              , mAmp   = tensorS (mAmp m) st }
   Gate g xs ->
     m { mAmp = applyGate (mDims m) g (map (regPos m) xs) (mAmp m) }
-  Drop _ -> m                        -- denotationally the identity
+  Drop xs -> m { mDropped = mDropped m ++ xs }   -- denotationally the identity
   Lift p x block
     | any ((== p) . fst) (mStore m) ->
         error ("lift: parameter " ++ p ++ " is already bound; this machine \
@@ -109,6 +241,11 @@ step m c = case c of
 runStmts :: (Eq a, Num a) => Mach a -> Prog a -> [Sel] -> Maybe Site -> Mach a
 runStmts m0 prog sel stop = go (m0 { mSel = sel }) prog
   where
+    -- The whole program is checked once, before the run, from the scope the
+    -- machine starts in: halting at a site must not hide a use after it.
+    checked = requireFlat (maybe ElaboratedFragment (const SurfaceFragment) stop)
+                          (machScope m0) prog
+    go m _ | checked `seq` False = m
     go m [] = case stop of
       Nothing -> m
       Just x  -> error ("runStmts: no drop site named " ++ show x)
@@ -195,8 +332,8 @@ tempProbes vis prog target sel =
   , (_, inp) <- probesFor vis ]
 
 -- | The criterion's answer at one site under one selection: the temporary
--- path above, unless the block holds a loan, in which case the site definition's
--- clause (4) decides it through 'loanResultS' -- a different theorem (the site map
+-- path above, unless the block holds a loan, in which case the site definition clause
+-- (4) decides it through 'loanResultS' -- a different theorem (the site map
 -- factors as an isometry on the block's loans tensor a map on the rest, not
 -- as a fixed ray tensor a map of the visible input; see the module-level
 -- note below "Loans"). One loan or several, alone or beside temporaries:
@@ -299,7 +436,7 @@ basisTuples regs = [ idxToLevels dims k | k <- [0 .. product dims - 1] ]
 
 -- | The loans a site's block holds, in the order the @drop@ names its
 -- registers: the factors of @H_loan@ in @[[Omega]] = H_loan (x) [[Omega']]@,
--- the site definition's clause (4). Empty when the block is temporaries
+-- the site definition's clause (3). Empty when the block is temporaries
 -- only, which is the temporary's test ('tempVerdictS'), not this one.
 blockLoansAtS :: Prog a -> Site -> [(String, Int)]
 blockLoansAtS prog site =
@@ -340,7 +477,7 @@ isScalarIdentity m =
     n = length m
     t = m !! 0 !! 0
 
--- | the site definition's clause (4) at one site/selection, for a block holding one or
+-- | the site definition's clause (3) at one site/selection, for a block holding one or
 -- more loans -- alone, or beside temporaries.
 --
 -- Write the input space as @[[Omega]] = H_loan (x) [[Omega']]@, where
@@ -477,8 +614,19 @@ prefixThroughS prog x = before ++ take 1 after
 prefixThrough :: Prog a -> String -> Prog a
 prefixThrough prog x = prefixThroughS prog [x]
 
+-- | The drop sites of a program, in order. A site is a top-level command;
+-- a drop inside an if branch would be no site at all, so it is refused.
 dropSites :: Prog a -> [Site]
-dropSites prog = [ x | Just x <- map siteNames prog ]
+dropSites prog
+  | any inBranch prog = error "dropSites: drop inside an if branch; a branch \
+                              \allocates, lifts and drops nothing"
+  | otherwise = [ x | Just x <- map siteNames prog ]
+  where
+    inBranch (IfBit _ t e) = any isDropOrIf (t ++ e)
+    inBranch _             = False
+    isDropOrIf (Drop _)      = True
+    isDropOrIf (IfBit _ t e) = any isDropOrIf (t ++ e)
+    isDropOrIf _             = False
 
 -- Per-site, per-selection report
 
@@ -488,7 +636,7 @@ data DropReport = DropReport
   } deriving Show
 
 verdict :: (Eq a, Fractional a, Conj a) => VisSpec -> Prog a -> [DropReport]
-verdict vis prog =
+verdict vis prog = requireFlat SurfaceFragment (visScope vis) prog `seq`
   [ DropReport x [ (sel, semanticVerdictS vis prog x sel)
                  | sel <- allSelections (liftDepthBeforeS prog x) ]
   | x <- dropSites prog ]

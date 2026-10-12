@@ -1,8 +1,8 @@
 -- Elab.hs: Lemma E, both directions.
 --
--- 'flatToProgramR' reads a flat engine program (Drop.Lang.Syntax.Cmd,
--- as parsed from a .s corpus file) as a typed 'Program'. The reading is
--- one line per construct, the two syntaxes being the same syntax:
+-- 'flatToProgramR' reads an existing flat engine program (Drop.Lang.Syntax.Cmd,
+-- as parsed from a .s corpus file) as a typed 'Program'. The reading is now
+-- one line per construct, because the two syntaxes are the same syntax:
 -- "U v;" is 'StGate', "new t : [d] @ psi;" is 'StNew', "drop v;" is
 -- 'StDrop', "p = lift[S] x;" is 'StLift'. The one construct that is not
 -- already flat is the NON-TAIL `if`: an 'IfBit' with statements after it is
@@ -13,9 +13,9 @@
 --
 -- 'elab' goes the other way: a term back to the flat command list, so the
 -- existing two engines (Drop.Lang.Interp's semantic criterion and
--- Drop.Lang.Report.Trace) run the typed term unchanged. It is total on every
--- term a program file can name: the shapes that would force a refusal -- a gate
--- that renames its registers, a lift that renames the measured one -- do not
+-- Drop.Lang.Report.Trace) run the typed term unchanged. It is now total on every
+-- term a program file can name: the shapes it used to refuse -- a gate that
+-- renames its registers, a lift that renames the measured one -- do not
 -- exist in this language, since neither binds.
 
 module Drop.Lang.Elab

@@ -286,6 +286,7 @@ wireSafeAtDropSite p t = case truncateAtDrop p t of
 -- what forces agreement.
 dropOrderIsIrrelevant :: MProgram -> Bool
 dropOrderIsIrrelevant p =
+  either (error . ("dropOrderIsIrrelevant: " ++) . show) (const True) (scopeCheck p) &&
   and [ wireSafeAtDropSite p t == wireSafe p t | (t, _, _) <- mTemporaries p ]
 
 -- The Inhabitants
@@ -339,8 +340,8 @@ irreduciblyJoint = MProgram
       [ MNew "a" 2 0
       , MNew "b" 2 0
       -- One joint gate: no gate over Z[1/2] puts a single qubit on the
-      -- all-ones ray (needs 1/sqrt2, and H is not over Z[1/2]).
-      -- The 4x4 all-ones Householder
+      -- all-ones ray (needs 1/sqrt2, and H is not over Z[1/2]; an earlier
+      -- version wrongly used two Hadamards). The 4x4 all-ones Householder
       -- is over Z[1/2]: ||w||^2 = 1, every entry +-1/2.
       , MApply "R4" (allOnesPrep 4) ["a", "b"]
       , MDrop "a"
@@ -391,7 +392,7 @@ interleavedDrops = MProgram
 
 -- | A name allocated again after being dropped.
 --
--- The language permits this, @new@ being the only resurrection, but composition
+-- The calculus permits this, @new@ being the only resurrection, but composition
 -- gives every allocation its own tensor factor, so two allocations of one name
 -- would be two temporaries sharing a name and 'Drop.Theory.Many.Multi.liftGate' would
 -- resolve gates to the wrong one.  It is refused with an instruction to rename.

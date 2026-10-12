@@ -51,7 +51,7 @@ data Chain a = Chain
   }
 
 chain :: (Eq a, Fractional a) => VisSpec -> Prog a -> String -> Chain a
-chain vis prog x = case cut prog x of
+chain vis prog x = requireFlat SurfaceFragment (visScope vis) prog `seq` case cut prog x of
   Left h  -> Chain [source] (Just h)
   Right c -> case park vis c of
     Left h  -> Chain [source, cutStage c] (Just h)
@@ -94,7 +94,7 @@ data ResReport a = ResReport
 -- it is the criterion refusing.
 residualCheck :: (Eq a, Fractional a)
               => VisSpec -> Prog a -> String -> ResReport a
-residualCheck vis prog x = case cut prog x of
+residualCheck vis prog x = requireFlat SurfaceFragment (visScope vis) prog `seq` case cut prog x of
   Left h  -> declined [(h, False)] Nothing
   Right c -> case park vis c of
     Left h

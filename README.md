@@ -1,24 +1,27 @@
 # Safe to Drop: an Exact Criterion for Quantum Temporaries
 
-When may a quantum compiler drop a temporary register, and what does deciding
-that cost?
+When can a quantum compiler restore a temporary register by acting on that
+register alone, without changing the rest of the computation?
 
-- `narrative/` -- the paper and its figures.
-- `code/` -- the checker and the compiler in Haskell, the OpenQASM 3 circuits
-  it emits with the numeric check that re-simulates them, and the Silq
-  programs of the comparison with the transcripts Silq printed on them.
+- [`abstract/abstract.pdf`](abstract/abstract.pdf) is the extended abstract;
+  its LaTeX and figure sources are in [`abstract/`](abstract/).
+- [`code/haskell/`](code/haskell/) contains the typed language, safety checkers,
+  OpenQASM 3 compiler, examples and tests.
+- [`code/qasm3/`](code/qasm3/) compares the emitted circuits with the
+  interpreter's results using numerical simulation.
+- [`narrative/`](narrative/) contains the earlier full-paper draft.
 
-## Building
+## Build and run
 
+```sh
+(cd abstract && make abstract)
+(cd code/haskell && cabal test all)
+(cd code/haskell && cabal run dqt -- run programs/mcx-dirty.s)
 ```
-(cd narrative    && make)        # build/full.pdf
-(cd code/haskell && cabal test)  # the three suites
-```
 
-`make` writes into `narrative/build/`. The `full.pdf` committed at
-`narrative/` is that build, copied up by hand.
+The [Haskell README](code/haskell/README.md) describes the compiler's supported
+fragment and diagnostics. The [OpenQASM README](code/qasm3/README.md) gives the
+Python dependencies and circuit-comparison commands. Verdict calculations are
+exact; emitted gate parameters and circuit comparisons use numerical arithmetic.
 
-An amber rule and *Planned* in the paper mark a result that belongs where it
-stands and is not written yet; nothing inside such a block is claimed.
-
-MIT; see `LICENSE`.
+MIT; see [`LICENSE`](LICENSE).

@@ -1,11 +1,9 @@
 # The `.s` concrete syntax
 
-One page, from the syntax figure of the paper. The grammar **is** the file format: a
-program is a sequence of statements ending in `return`, and the paper prints
-no other form. Every program printed in the paper is in this spelling, and
-every file here is one of them or a variant of one. The parser is
+A program is a sequence of statements ending in `return`; the grammar below
+is the accepted `.s` file format. The parser is
 `src/Drop/Lang/Parser.hs`; `dqt typecheck FILE` parses and typechecks a file,
-`dqt run FILE` decides its drops.
+and `dqt run FILE` reports its drop verdicts.
 
 ## The grammar
 
@@ -21,7 +19,10 @@ terms    M ::= return v                 -- hand back the registers v names
              | p = lift[S] x ; M        -- measure whether x is in S;
                                         --   x stays live under its own name
              | if e { M1 } else { M2 }  -- classical control on a lifted bit,
-                                        --   in tail position
+                                        --   in tail position; a file may write
+                                        --   statements after an if (the
+                                        --   sequencing below), and its arms
+                                        --   allocate, lift and drop nothing
 guards   e ::= 0 | 1 | p | !e | e1 && e2 | e1 || e2
 
 programs     prog f (x1 : [d1], ..., xn : [dn]) : A { M }
@@ -30,8 +31,8 @@ programs     prog f (x1 : [d1], ..., xn : [dn]) : A { M }
 
 `*` associates to the right, so `[2] * [2] * [2]` is `[2] * ([2] * [2])`, and
 so do tuples. A guard is a bit constant `0` or `1`, a parameter a lift bound,
-or a negation, conjunction or disjunction of guards; the paper writes the
-connectives `¬`, `∧`, `∨` and prints no compound guard. `S` is a set of levels, `{0}`, `{0,1}`, `{7}`: a
+or a negation, conjunction or disjunction of guards. The file format writes
+these connectives as `!`, `&&`, and `||`. `S` is a set of levels, `{0}`, `{0,1}`, `{7}`: a
 non-empty proper subset of the register's levels. `psi` is a ket `|i>` or an
 exact amplitude vector `(a0, ..., a_{d-1})`, which must be a unit vector.
 
@@ -75,8 +76,7 @@ Gate, New, Drop) and two more for the two the measurement section adds (Lift,
 If). A statement is not a term of the language, and nothing types one alone.
 A program `prog f (x1:[d1], ..., xn:[dn]) : A { M }` is the judgement
 `x1:[d1], ..., xn:[dn] |- M : A`; an input marked `loan` is typed as any
-other. The rules are the language definition in the paper and `src/Drop/Lang/Check.hs`
-here.
+other. The typing rules are implemented in `src/Drop/Lang/Check.hs`.
 
 `Drop` carries no premise about safety: if it did, unsafe programs would not
 be *expressible*, and the rules that reject them could not be compared. That
@@ -119,12 +119,12 @@ The parameters a block binds leave scope at its closing brace.
 The header is the input context: `x : [d]` is an ordinary input register, and
 `loan a : [d]` is a register the program is handed in a state it does not
 know and must hand back. A loan is typed and run as an input; the marker is
-read only by the site definition and the compiler, which prepares nothing for it — it
+used by the safety checker and the compiler, which prepares nothing for it — it
 is an input register of the emitted circuit. A loan is *dropped*, never
 returned, and exactly once on every execution path.
 
 A `drop` of a tuple is **one** site, not two. A tuple that holds a loan is
-decided by the site definition's clause (4), whatever else the block holds: writing the
+checked by the loan criterion, whatever else the block holds: writing the
 input space as `[[Omega]] = H_loan (x) [[Omega']]` with `H_loan` the tensor
 product of the spaces of the loans **in the block**, the site is safe when
 the site map factors as `sigma_s = B (x) W` with `B : H_loan -> H_block` an
@@ -132,6 +132,14 @@ isometry and `W : [[Omega']] -> H_rest` linear. `B` is the block factor, and
 it is *rectangular* when the block holds temporaries beside its loans. A
 block of temporaries only is the case `H_loan = C`, where `B` is the unit
 vector the temporaries are left on — the fixed-ray test.
+
+An input without the `loan` marker may also be dropped. If the block contains
+no loans, the checker tests for one fixed pure block state at every input,
+as it does for temporaries. Dropping an untouched input fails this test;
+moving its state into another register can make the drop safe. The compiler
+refuses a reachable safe drop that names an ordinary input, because that
+input has neither a declared allocation state nor a loan-return obligation.
+An unsafe drop leaves its wires live, as for any other unsafe drop.
 
 ## The file
 
@@ -152,9 +160,9 @@ instead: the accepted language is exactly the printed grammar above.
 
 `H`, `X`, `Z`, `S`, `T`, `CX`, `CCX`, `Swap`, `Diff` (Grover's `2|s><s| - I`),
 each with its standard matrix. `HC` is a second name for `H`. `tilt` and
-`READ3` are the two qutrit gates `rus.s` needs. The paper's *Compilation to
-circuits* does not list them, and they are outside the emitter's domain along
-with every three-level register.
+`READ3` are qutrit gates used by `rus.s`. The OpenQASM compiler supports
+power-of-two register dimensions and the gate forms listed by its implementation;
+three-level registers are outside its domain.
 
 A declared gate joins the table for that file:
 `gate V : [2] * [2] = mat { ... };` makes `V t q;` a gate statement.
@@ -214,6 +222,6 @@ dqt pass FILE          the static pass behind the runtime check, stage by stage
 Nineteen files. Four of them — `teleport.s`, `rus.s`, `temp-and.s` and
 `temp-general.s` — write a non-tail `if`, and so use the sequencing operator.
 `rus.s` is outside the compiler's domain by dimension; `bell-block.s` and
-`c.s` are outside it by gate; the other sixteen compile to OpenQASM 3. Two
-more files, `test/fixtures/cz-loan.s` and `test/fixtures/dirty-nonbasis.s`,
-exercise the compiler and are not part of the corpus.
+`c.s` are outside it by gate; the other sixteen compile to OpenQASM 3. Three
+more files, `test/fixtures/cz-loan.s`, `test/fixtures/dirty-nonbasis.s` and
+`test/fixtures/dirty-nonbasis-unsafe.s`, exercise the compiler outside this corpus.

@@ -36,7 +36,7 @@ module Drop.Theory.Lifted
   , verdictProfile
   , constantProfile
   , oracleSplit
-  , everySoundRecordObliviousVerdictRejects
+  , everySoundStaticDisciplineRejects
   ) where
 
 import Data.List (nub)
@@ -46,7 +46,7 @@ import Drop.Theory.Algebra.Linear
 import Drop.Theory.Algebra.Scalar
 import Drop.Theory.Criterion.Split (canonicalLine)
 import Drop.Theory.Program.Syntax
-import Drop.Theory.Program.Typing (Ctx, ctxExtend, ctxLookup, ctxNames, ctxRemove, ctxRename)
+import Drop.Theory.Program.Typing (Ctx, TypeError (..), checkGate, ctxExtend, ctxLookup, ctxNames, ctxRemove, ctxRename)
 
 -- Measurement records
 
@@ -55,8 +55,8 @@ import Drop.Theory.Program.Typing (Ctx, ctxExtend, ctxLookup, ctxNames, ctxRemov
 data Choice = In | Out deriving (Eq, Show)
 
 -- | A measurement record: one choice per lift, in run order, supplied by
--- the run, never by the text. A record-oblivious verdict is a function that
--- does not receive one.
+-- the run, never by the text. A static analysis is a function that does
+-- not receive one.
 type Trace = [Choice]
 
 -- | All @2^d@ traces at depth @d@, in a fixed order.
@@ -68,7 +68,7 @@ allTraces n = [ c : t | c <- [In, Out], t <- allTraces (n-1) ]
 
 type PName = String
 
--- | The lifted language: the affine core plus two constructs.
+-- | The lifted calculus: the affine core plus two constructs.
 data LTerm
   = LRet  Name
   | LNew  Name Int Int LTerm
@@ -106,7 +106,7 @@ liftDepth (LIf _ e1 e0)    = max (liftDepth e1) (liftDepth e0)
 liftFree :: LTerm -> Bool
 liftFree e = liftDepth e == 0
 
--- | The measurement-free language sits inside the lifted one.
+-- | The measurement-free calculus sits inside the lifted one.
 embed :: Term -> LTerm
 embed (Ret v)         = LRet v
 embed (Pair _ _)      = error "Drop.Theory.Lifted.embed: pairs are outside the lifted fragment"
@@ -125,6 +125,9 @@ data LTypeError
   | LDuplicateParam PName
   | LBranchTypes
   | LMustAllocate
+  | LCore TypeError
+    -- ^ a premise the core rules state for New and Act, which the lifted
+    -- calculus inherits: 'Drop.Theory.Program.Typing'
   deriving (Eq)
 
 instance Show LTypeError where
@@ -140,6 +143,7 @@ instance Show LTypeError where
   show (LDuplicateParam p) = "the parameter " ++ show p ++ " is already bound"
   show LBranchTypes        = "the two branches of a conditional disagree"
   show LMustAllocate       = "a program must begin with an allocation"
+  show (LCore e)           = show e
 
 data LTypedProgram = LTypedProgram
   { ltProgram :: LProgram
@@ -163,13 +167,24 @@ lcheck _ g (LRet v) =
     Just _ | length g /= 1 -> Left (LLeftover (filter (/= v) (ctxNames g)))
            | otherwise     -> Right ()
 
-lcheck ps g (LNew t d _ e)
+-- New and Act carry the core rules' premises unchanged (the lifted calculus
+-- is the core plus lift and if): a register has at least one level, the
+-- allocation index is one of them, a gate is a unitary of the right shape,
+-- and its two outputs are fresh, distinct names.
+lcheck ps g (LNew t d i0 e)
   | t `elem` ctxNames g = Left (LUnbound t)
+  | d < 1               = Left (LCore (BadRegisterDimension t d))
+  | i0 < 0 || i0 >= d   = Left (LCore (BadAllocIndex i0 d))
   | otherwise           = lcheck ps (ctxExtend t (Tmp d) g) e
 
-lcheck ps g (LAct (t',v') _ (t,v) e) =
+lcheck ps g (LAct (t',v') u (t,v) e) =
   case (ctxLookup t g, ctxLookup v g) of
-    (Just (Tmp d), Just (Vis m)) ->
+    (Just (Tmp d), Just (Vis m)) -> do
+      either (Left . LCore) Right (checkGate u d m)
+      if t' == v' then Left (LCore (GateOutputsCoincide t')) else Right ()
+      mapM_ (\x -> if x `elem` ctxNames (ctxRemove t (ctxRemove v g))
+                     then Left (LCore (DuplicateName x)) else Right ())
+            [t', v']
       lcheck ps (ctxRename v v' (Vis m) (ctxRename t t' (Tmp d) g)) e
     (Nothing, _) -> Left (LUnbound t)
     (_, Nothing) -> Left (LUnbound v)
@@ -334,8 +349,19 @@ flattenAlong p tr0 = case lTerm p of
 -- this to run a /segment/ of a program starting from a state it chose: the
 -- check never re-runs the program, it runs the continuation from the
 -- transferred state.
+--
+-- A segment chosen by a pass need not have met the checker, so a statement
+-- that names a register the run has already dropped is refused by name: a
+-- drop changes nothing in the amplitude, and the run would go through.
 runStmts :: LConfig -> [LStmt] -> LConfig
 runStmts c [] = c
+runStmts c (s : _)
+  | (x : _) <- [ x | x <- stmtNames s, x `elem` lcDropped c ] =
+      error ("Drop.Theory.Lifted.runStmts: register " ++ x ++ " has been dropped")
+  where
+    stmtNames (SDrop t)          = [t]
+    stmtNames (SAct _ _ (t, v))  = [t, v]
+    stmtNames (SLift _ x _)      = [x]
 runStmts c (s : ss) = case s of
   SDrop t -> runStmts c { lcDropped = lcDropped c ++ [t] } ss
   SAct (t',v') u (t,v) ->
@@ -415,8 +441,8 @@ verdictAt tp tr = TraceVerdict
 
 -- | The verdict profile of a program: its verdict at every trace.
 --
--- A sound and complete record-oblivious verdict for a class of programs
--- exists if and only if the verdict is constant on each program's profile.  Both of the
+-- A sound and complete static analysis for a class of commands exists if and
+-- only if the verdict is constant on each command's profile.  Both of the
 -- impossibility results are instances of that statement, and this function
 -- computes the object it is about.
 verdictProfile :: LTypedProgram -> [TraceVerdict]
@@ -434,17 +460,17 @@ constantProfile tp =
     admissible Vacuous     = True
     admissible (Unsafe _ _) = False
 
--- | The exact boundary.  A program is /outcome-dependent/ when some trace
--- makes its drop safe and some other trace does not; a program defeats every
--- sound record-oblivious verdict if and only if it is outcome-dependent.
+-- | The exact boundary.  A command is /outcome-dependent/ when some trace makes its
+-- drop safe and some other trace does not; a command defeats every sound
+-- static analysis if and only if it is outcome-dependent.
 oracleSplit :: LTypedProgram -> Bool
 oracleSplit = not . constantProfile
 
--- | The corollary a compiler writer cares about: every sound record-oblivious
--- verdict must reject this command, and therefore loses its safe runs.
+-- | The corollary a compiler writer cares about: every sound static
+-- analysis must reject this command, and therefore loses its safe runs.
 --
--- No quantification over verdicts in the code: the interface lemma
+-- No quantification over disciplines in the code: the interface lemma
 -- turns "for every predicate on text" into "the profile is nonconstant",
 -- a finite check.
-everySoundRecordObliviousVerdictRejects :: LTypedProgram -> Bool
-everySoundRecordObliviousVerdictRejects = oracleSplit
+everySoundStaticDisciplineRejects :: LTypedProgram -> Bool
+everySoundStaticDisciplineRejects = oracleSplit

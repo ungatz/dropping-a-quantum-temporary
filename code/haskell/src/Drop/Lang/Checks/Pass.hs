@@ -68,8 +68,8 @@ chainProg = unlines
   , "  p = lift[{0,1}] t;", "  tilt x;", "  q = lift[{1,2}] t;"
   , "  drop t;", "  return x", "}" ]
 
--- | After a chain of lifts the temporary is left on g cut to the
--- intersection of the level sets the outcomes kept, so folding the
+-- | Corollary 7.3: after a chain of lifts the temporary is left on g cut to
+-- the intersection of the blocks the outcomes kept, so folding the
 -- restrictions into one at the front changes nothing.
 chainCorollaryOK :: Bool
 chainCorollaryOK = case parseProgram chainProg of

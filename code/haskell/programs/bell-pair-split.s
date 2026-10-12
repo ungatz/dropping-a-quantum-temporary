@@ -1,7 +1,7 @@
 -- bell-pair-split.s: which program a context compares.  Token-identical
 -- circuit to bell-pair.s -- the same Bell pair, H then CX -- but the two
 -- temporaries are dropped one register at a time instead of as one tuple.
--- Both drops are UNSAFE: the Bell vector is not a product state, so
+-- Both drops are now UNSAFE: the Bell vector is not a product state, so
 -- dropping a alone leaves a block that cannot be factored from the rest
 -- (b and x); and once a is gone, dropping b finds the rest of the state
 -- still carrying the hidden register a it was entangled with.  Nothing is

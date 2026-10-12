@@ -1,0 +1,47 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+
+\begin{document}
+\begin{tikzpicture}[house, semithick, font=\small,
+  bx/.style={box, fill=white, minimum width=7.5mm, minimum height=10.5mm},
+  sm/.style={box, fill=white, minimum width=6.5mm, minimum height=4.6mm},
+  gnd/.pic={\draw[ink] (0,0) -- (0.10,0); \draw[ink] (0.10,0.145) -- (0.10,-0.145);
+            \draw[ink] (0.19,0.100) -- (0.19,-0.100); \draw[ink] (0.28,0.055) -- (0.28,-0.055);}]
+\node[bx] (U) at (0,0) {$M$};
+\coordinate (a1) at ($(U.west)+(-0.62,0.27)$);
+\draw[ink] (a1) -- ($(U.west)+(0,0.27)$);
+\fill[ink] (a1) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
+\node[left, font=\footnotesize, inner sep=1.5pt] at ($(a1)+(-0.17,0)$) {$\psi$};
+\draw[ink] ($(U.west)+(0,-0.27)$) -- ++(-1.0,0) node[left, font=\footnotesize, inner sep=1.5pt] {$v$};
+\draw[ink] ($(U.east)+(0,0.27)$) -- ++(0.40,0) coordinate (g1);
+\pic at (g1) {gnd};
+\draw[ink] ($(U.east)+(0,-0.27)$) -- ++(0.85,0);
+\node[lbldim] at (-0.72,0.46) {$t$};                                                                                 \node[lbldim] at (0,-0.85) {program $M$};
+\node at (1.60,0) {$=$};
+\begin{scope}[xshift=2.45cm]
+  \coordinate (a2) at (0,0.27);
+  \fill[accent] (a2) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
+  \node[left, font=\footnotesize, inner sep=1.5pt, text=accent] at ($(a2)+(-0.17,0)$) {$g$};
+  \draw[ink] (a2) -- ++(0.72,0) coordinate (g2);
+  \pic at (g2) {gnd};
+  \node[sm] (W) at (0.5,-0.27) {$W$};
+  \draw[ink] (W.west) -- ++(-0.45,0) node[left, font=\footnotesize, inner sep=1.5pt] {$v$};
+  \draw[ink] (W.east) -- ++(0.5,0);
+  \node[lbldim] at (0.35,-0.85) {safe};
+\end{scope}
+\node at (4.15,0) {$=$};
+\begin{scope}[xshift=5.25cm]
+  \coordinate (a3) at (0,0.27);
+  \fill[ink] (a3) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
+  \node[left, font=\footnotesize, inner sep=1.5pt] at ($(a3)+(-0.17,0)$) {$\psi$};
+  \node[sm] (R) at (0.55,0.27) {$R$};
+  \draw[ink] (a3) -- (R.west);
+  \draw[ink] (R.east) -- ++(0.40,0) coordinate (g3);
+  \pic at (g3) {gnd};
+  \node[sm] (W3) at (0.55,-0.27) {$U$};
+  \draw[ink] (W3.west) -- ++(-0.5,0) node[left, font=\footnotesize, inner sep=1.5pt] {$v$};
+  \draw[ink] (W3.east) -- ++(0.5,0);
+  \node[lbldim] at (0.45,-0.85) {witness};
+\end{scope}
+\end{tikzpicture}
+\end{document}

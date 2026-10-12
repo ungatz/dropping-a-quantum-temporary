@@ -37,6 +37,8 @@ module Drop.Lang.Check
   ) where
 
 import qualified Data.Map.Strict as M
+import Drop.Lang.QState (isUnitary, norm2S)
+import Drop.Lang.Ring (Conj)
 import Drop.Lang.Typed
 
 -- | A linear register context: a finite map name -> dimension. The comma of
@@ -74,6 +76,10 @@ data TypeError
   | BadLiftBlock Name                   -- lift block not nonempty-proper
   | LoanReturned Name                   -- a loan named by the program's return value
   | LoanNotDroppedOnce Name             -- a loan not dropped exactly once on some path
+  | GateNotUnitary [Name]               -- Gate's premise U in the gate set, a set of unitaries
+  | BadDimension Name Int               -- a register of dimension below 2 (d >= 2)
+  | StateLength Name Int Int            -- New's premise psi in K^d: register, d, length of psi
+  | StateNotUnit Name Int               -- New's premise ||psi|| = 1
   | Other String
   deriving (Eq, Show)
 
@@ -90,7 +96,17 @@ showTypeError e = case e of
   LoanReturned x         -> "a loan is dropped, not returned (the language definition): the \
                             \return value names the loan " ++ x
   LoanNotDroppedOnce x   -> "the loan " ++ x ++ " must be dropped exactly once"
+  GateNotUnitary xs      -> "gate on " ++ showNames xs ++ " is not unitary (U U^H is not I); the \
+                            \Gate rule asks for U in the gate set, a set of unitaries"
+  BadDimension x d       -> "register " ++ x ++ " has dimension " ++ show d
+                            ++ "; a register has at least 2 levels"
+  StateLength x d n      -> "new " ++ x ++ " : [" ++ show d ++ "] needs " ++ show d
+                            ++ " amplitudes, got " ++ show n
+  StateNotUnit x d       -> "new " ++ x ++ " : [" ++ show d ++ "] must name a unit state"
   Other s                -> s
+  where
+    showNames [x] = x
+    showNames xs  = "(" ++ foldr1 (\a b -> a ++ ", " ++ b) xs ++ ")"
 
 -- | The comma: disjoint union, or the first repeated name as an error.
 mergeCtx :: Ctx -> Ctx -> Either TypeError Ctx
@@ -164,14 +180,24 @@ checkB _   (BLit _)   = Right ()   -- a bit Step-Lift substituted: no parameter 
 --         about safety.
 --   Lift  extends Pi by its parameter and leaves Omega alone: the register
 --         stays live under its own name.
-checkStmt :: Pi -> Ctx -> Stmt a -> Either TypeError (Pi, Ctx)
+--
+-- The premises the rules print about the data a statement carries are
+-- checked here too: Gate's U is in the gate set, a set of unitaries, so a
+-- square matrix of the right side that is not unitary is refused; New's psi
+-- is a unit vector of K^d; and a register has d >= 2 levels, in a New, a
+-- loan and the header alike.
+checkStmt :: (Eq a, Num a, Conj a) => Pi -> Ctx -> Stmt a -> Either TypeError (Pi, Ctx)
 checkStmt pi_ ctx (StGate g v) = do
   opCtx <- restrictCtx ctx (valueNames v)
   a <- checkValue opCtx v
   let expect = gateDimOf g
       got    = tyTotalDim a
-  if expect == got then Right (pi_, ctx) else Left (GateDim "U" expect got)
-checkStmt pi_ ctx (StNew t d _psi) = do
+  if expect == got then Right () else Left (GateDim "U" expect got)
+  if isUnitary g then Right (pi_, ctx) else Left (GateNotUnitary (valueNames v))
+checkStmt pi_ ctx (StNew t d psi) = do
+  checkDim t d
+  if length psi /= d then Left (StateLength t d (length psi)) else Right ()
+  if norm2S psi /= 1 then Left (StateNotUnit t d) else Right ()
   ctx' <- mergeCtx ctx (ctxSingle t d)
   Right (pi_, ctx')
 -- A loan types exactly like `new`: it introduces a register and reads none,
@@ -179,6 +205,7 @@ checkStmt pi_ ctx (StNew t d _psi) = do
 -- never look inside the state a register carries. What a loan IS -- an input
 -- the caller lends and gets back -- is 'loanDiscipline' below.
 checkStmt pi_ ctx (StLoan a d) = do
+  checkDim a d
   ctx' <- mergeCtx ctx (ctxSingle a d)
   Right (pi_, ctx')
 checkStmt pi_ ctx (StDrop _ v) = do
@@ -192,9 +219,14 @@ checkStmt pi_ ctx (StLift p s x) = do
   if p `elem` pi_ then Left (ParamAlreadyBound p) else Right ()
   Right (pi_ ++ [p], ctx)
 
+-- | "The restriction d >= 2": a register of one level carries no quantum
+-- data, and every register the language names has at least two.
+checkDim :: Name -> Int -> Either TypeError ()
+checkDim x d = if d >= 2 then Right () else Left (BadDimension x d)
+
 -- The term judgement: Pi; Omega |- M : A ---------------------------------
 
-checkTermP :: Pi -> Ctx -> Term a -> Either TypeError Ty
+checkTermP :: (Eq a, Num a, Conj a) => Pi -> Ctx -> Term a -> Either TypeError Ty
 checkTermP _ ctx (Return v) =
   let extra = [ x | x <- ctxDom ctx, x `notElem` valueNames v ]
   in if not (null extra) then Left (LeftoverWires extra) else checkValue ctx v
@@ -208,17 +240,19 @@ checkTermP pi_ ctx (If e m1 m2) = do
   if a1 == a2 then Right a1 else Left (BranchMismatch a1 a2)
 
 -- | The measurement-free fragment carries Pi = [].
-checkTerm :: Term a -> Ctx -> Either TypeError Ty
+checkTerm :: (Eq a, Num a, Conj a) => Term a -> Ctx -> Either TypeError Ty
 checkTerm = flip (checkTermP [])
 
 -- | A surface term is typed after its blocks are expanded (the desugaring lemma).
-checkSurface :: Surface a -> Ctx -> Either TypeError Ty
+checkSurface :: (Eq a, Num a, Conj a) => Surface a -> Ctx -> Either TypeError Ty
 checkSurface m ctx = checkTerm (toTerm m) ctx
 
 -- | @check :: Program -> Either TypeError Ty@, i.e. the judgement
 -- @x1:[d1], ..., xn:[dn] |- M : A@ the program header states.
-check :: Program a -> Either TypeError Ty
-check (Program vis m) = checkSurface m (ctxFromList vis)
+check :: (Eq a, Num a, Conj a) => Program a -> Either TypeError Ty
+check (Program vis m) = do
+  mapM_ (uncurry checkDim) vis
+  checkSurface m (ctxFromList vis)
 
 -- The loan discipline
 --
@@ -226,7 +260,7 @@ check (Program vis m) = checkSurface m (ctxFromList vis)
 -- carries, and a loan types exactly like a `new`. What a loan is -- an input
 -- the caller lends and gets back -- is a well-formedness condition on the
 -- whole program, checked here after 'check' has established that the term is
--- well typed, so that the rules of the language stay as the paper prints
+-- well typed, so that the rules of the calculus stay as the paper prints
 -- them.
 --
 -- Two obligations, both from the language definition: a loan is DROPPED, not returned
@@ -268,7 +302,7 @@ loanDiscipline (Program _ m) = mapM_ onePath (loanPaths [] (toTerm m))
 
 -- | The statics, then the loan discipline: a program is accepted when it
 -- types and every loan it takes is dropped exactly once and never returned.
-checkProgram :: Program a -> Either TypeError Ty
+checkProgram :: (Eq a, Num a, Conj a) => Program a -> Either TypeError Ty
 checkProgram p = do
   ty <- check p
   loanDiscipline p

@@ -1,8 +1,8 @@
 -- Park.hs: pass 2 of the static pass, and the form it makes.
 --
--- The criterion is about a prefix that leaves the temporary in a fixed state
+-- Theorem 7.1 is about a prefix that leaves the temporary in a fixed state
 -- whatever the visible input. This pass decides whether the prefix does
--- that, and if it does it replaces the prefix by the two things the criterion
+-- that, and if it does it replaces the prefix by the two things the theorem
 -- names: the line the temporary is left on, and the map the rest received.
 
 module Drop.Lang.Pass.Park
@@ -66,7 +66,7 @@ interpParked :: (Eq a, Num a) => VisSpec -> Parked a -> [Sel] -> StateV a -> Mac
 interpParked vis p sel inp = runStmts m0 (pRest p) sel Nothing
   where
     m0 = Mach (map fst vis ++ [pSite p]) (map snd vis ++ [pDim p])
-              (tensorS (mulMV (pAction p) inp) (pLine p)) [] [] []
+              (tensorS (mulMV (pAction p) inp) (pLine p)) [] [] [] []
 
 mulMV :: Num a => Matrix a -> StateV a -> StateV a
 mulMV b v = [ sum (zipWith (*) row v) | row <- b ]

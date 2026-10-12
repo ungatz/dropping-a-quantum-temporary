@@ -12,6 +12,7 @@ module Drop.Theory.Program.Typing
   , TypeError(..)
     -- * The judgement
   , typeOf
+  , checkGate
     -- * Programs
   , TypedProgram(..)
   , checkProgram

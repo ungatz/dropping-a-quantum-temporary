@@ -1,10 +1,9 @@
--- | The @dqt@ command line: one subcommand per object the paper describes.
--- Every number the paper prints is computed here, not transcribed.
+-- | Command line for the theory and typed-language tools.
 module Main (main) where
 
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
-import System.IO (hPutStr, hPutStrLn, stderr)
+import System.IO (hPutStr, hPutStrLn, hSetEncoding, stderr, stdout, utf8)
 import Data.List (intercalate)
 
 import Drop.Bridge
@@ -43,7 +42,7 @@ usage = unlines
   , "  dqt lifted               dynamic lifting: the verdict profile"
   , "  dqt residual             the runtime check, as an emitted table"
   , "  dqt classical            the classical core, and the two-level converse"
-  , "  dqt all                  everything, in the paper's order"
+  , "  dqt all                  all reports and examples"
   , ""
   , "the two engines, and the language layer"
   , ""
@@ -61,6 +60,8 @@ usage = unlines
 
 main :: IO ()
 main = do
+  hSetEncoding stdout utf8
+  hSetEncoding stderr utf8
   as <- getArgs
   case as of
     ["list"]              -> putStr cmdList
@@ -173,8 +174,8 @@ cmdLifted = unlines (concatMap one
         ++ kvs
            [ ("the same verdict at every trace", yesNo (constantProfile tp))
            , ("oracle-split", yesNo (oracleSplit tp))
-           , ("so no record-oblivious verdict can accept it",
-               yesNo (everySoundRecordObliviousVerdictRejects tp)) ]
+           , ("so no static rule can accept it",
+               yesNo (everySoundStaticDisciplineRejects tp)) ]
     traceRow tv = case lines (show (tvVerdict tv)) of
       []       -> []
       (l : ls) ->
@@ -226,7 +227,7 @@ cmdAll = unlines $
            ++ " programs are literally separable.")
 
   ++ sectionHead 2 "three programs in full" "where a verdict comes from"
-  ++ para "(A) and (C) are safe on different lines. (B) is (C) plus one instruction, and leaks."
+  ++ para "(A) and (C) are safe on different lines. (B) leaks, but a second read makes (C) safe."
   ++ concatMap detail ["example-A", "example-B", "example-C"]
 
   ++ sectionHead 3 "many temporaries" "bundling, and what it costs"

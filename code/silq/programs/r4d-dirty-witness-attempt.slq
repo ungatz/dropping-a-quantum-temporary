@@ -1,8 +1,0 @@
-// Row 4, releasing the dirty scratch with an explicit witness instead.
-// forget(x = e) needs a value for x, and a borrowed dirty ancilla has none:
-// its state is unknown to the borrower.
-def main() {
-	d := H(0:B); d := T(d);
-	forget(d = H(0:B));
-	return 0:B;
-}

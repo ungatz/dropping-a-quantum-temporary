@@ -1,7 +1,7 @@
 -- |
 -- Module      : Drop.Theory.Criterion.Witness
 --
--- Both directions of the criterion: 'forwardDirection' checks
+-- Both directions of the criterion (the criterion section): 'forwardDirection' checks
 -- @sep(R, W)@ against the elaborator, and 'synthesize' builds a witness
 -- program and compares its denotation entry by entry with the original.
 module Drop.Theory.Criterion.Witness

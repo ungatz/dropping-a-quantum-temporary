@@ -1,4 +1,4 @@
--- RUS.hs: one repeat-until-success iteration, unrolled (the implementation section).
+-- RUS.hs: one repeat-until-success iteration, unrolled (Sections 6, 9.2).
 --
 -- Both branches of the conditional run the same code; what differs is the
 -- state the selection transferred. The drop is refused when the block

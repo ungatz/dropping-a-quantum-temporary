@@ -1,0 +1,31 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house}
+\newcommand{\ket}[1]{\lvert #1\rangle}
+\newcommand{\bra}[1]{\langle #1\rvert}
+\definecolor{levelzero}{HTML}{0072B2}
+\definecolor{levelone}{HTML}{E69F00}
+\colorlet{lvl0soft}{levelzero!18}
+\colorlet{lvl1soft}{levelone!23}
+
+\begin{document}
+\begin{tikzpicture}[house, semithick, font=\small,
+  gt/.style={draw=ink, fill=white, minimum width=0.55cm, minimum height=0.55cm, inner sep=2pt},
+  gnd/.pic={\draw[ink] (0,0) -- (0.10,0); \draw[ink] (0.10,0.145) -- (0.10,-0.145);
+            \draw[ink] (0.19,0.100) -- (0.19,-0.100); \draw[ink] (0.28,0.055) -- (0.28,-0.055);}]
+\begin{scope}[yshift=-2.95cm]
+  \node at (6.1,0.35) {$\dfrac{{\color{accent}(\alpha+\beta)\ket{00}}+{\color{accentwarm}(\alpha-\beta)\ket{11}}}{\sqrt2}$};
+  \node[font=\footnotesize, text=muted, anchor=west, inner sep=2pt] at (9.2,0.35) {before measurement};
+  \draw[->, accent] (5.2,-0.10) -- (3.0,-0.23);
+  \draw[->, accentwarm] (7.0,-0.10) -- (9.2,-0.23);
+  \node[font=\footnotesize, inner sep=2pt] at (6.1,-0.22) {{\ttfamily lift}, then $V$};
+    \fill[lvl0soft] (0,-0.68) rectangle (5.9,-2.5);
+  \node[font=\small\bfseries, text=accent] at (2.95,-0.95) {record $p=1$ (safe, $g=\ket0$)};
+  \node at (2.95,-1.55) {$\dfrac{\alpha+\beta}{\sqrt2}\;\ket0\otimes\ket0$};
+  \node at (2.95,-2.14) {weight $\lvert \alpha+\beta\rvert^2/2$};
+    \fill[lvl1soft] (6.3,-0.68) rectangle (12.2,-2.5);
+  \node[font=\small\bfseries, text=accentwarm] at (9.25,-0.95) {record $p=0$ (unsafe)};
+  \node at (9.25,-1.55) {$\dfrac{\alpha-\beta}{2}\,(\ket{01}+\ket{10})$};
+  \node at (9.25,-2.14) {weight $\lvert \alpha-\beta\rvert^2/2$};
+\end{scope}
+\end{tikzpicture}
+\end{document}

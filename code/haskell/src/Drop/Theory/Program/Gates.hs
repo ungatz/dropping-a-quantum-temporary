@@ -2,7 +2,7 @@
 -- Module      : Drop.Theory.Program.Gates
 --
 -- The gate library. Every matrix is exact over "Drop.Theory.Algebra.Scalar", and each
--- Haddock says what the gate does and where the language uses it.
+-- Haddock says what the gate does and where the calculus uses it.
 module Drop.Theory.Program.Gates
   ( -- * One-register matrices
     mId, mX, mZ, mH, mS, mT
@@ -11,7 +11,7 @@ module Drop.Theory.Program.Gates
     -- * Two-register matrices (temporary most significant)
   , mAdd, mCX, mCZ, mSwap, mCompute
   , permMat
-    -- * Ready-made language gates
+    -- * Ready-made calculus gates
   , gHt, gXt, gTiltT, gIdent
   , gRead, gCopy, gCZ, gCompute, gComputeAt, gZt
   ) where
@@ -84,7 +84,7 @@ permMat d p = [ [ if i == p j then kone else kzero | j <- [0 .. d-1] ]
 -- > |t, v> |-> |t, (v + t) mod d>
 --
 -- At @d = 2@ it is exactly @CNOT@ with the temporary as control: the
--- /only/ way this language can make @v@ depend on the temporary.
+-- /only/ way this calculus can make @v@ depend on the temporary.
 mAdd :: Int -> Mat
 mAdd d = permMat (d*d) (\k -> let t = k `div` d
                                   v = k `mod` d
@@ -118,7 +118,7 @@ mCompute = permMat 4 (\k -> let t = k `div` 2
 mSwap :: Int -> Mat
 mSwap d = permMat (d*d) (\k -> (k `mod` d) * d + (k `div` d))
 
--- ready-made language gates
+-- ready-made calculus gates
 
 -- | @t := H t@ over a visible register of dimension @m@.
 gHt :: Int -> Gate

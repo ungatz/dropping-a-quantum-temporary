@@ -25,7 +25,7 @@ data Record a = Record
   } deriving Show
 
 -- | Resolve the lifts under every record. With no lift there is one record
--- and nothing to check; with a lift, the criterion needs the visible action to
+-- and nothing to check; with a lift, Theorem 7.1 needs the visible action to
 -- be right-invertible (@B-right-invertible@).
 resolve :: (Eq a, Fractional a) => VisSpec -> Parked a -> Either String [Record a]
 resolve vis p
@@ -52,7 +52,7 @@ resolve vis p
     dimsOf (Loan n d)   = [(n, d)]
     dimsOf _                = []
 
--- | The state the first lift hands to the continuation (the criterion): @g@
+-- | The state the first lift hands to the continuation (Theorem 7.1): @g@
 -- cut down to the block the outcome kept, or @g@ itself when that lift
 -- measured another register.
 transferred :: Num a => Parked a -> Record a -> StateV a
@@ -68,6 +68,6 @@ interpRecord :: (Eq a, Num a) => VisSpec -> Parked a -> Record a -> StateV a -> 
 interpRecord vis p r w = foldl go m0 (rSteps r)
   where
     m0 = Mach (map fst vis ++ [pSite p]) (map snd vis ++ [pDim p])
-              (tensorS w (pLine p)) (rStore r) [] []
+              (tensorS w (pLine p)) (rStore r) [] [] []
     go m (Keep y ks) = m { mAmp = projectLevels (mDims m) (regPos m y) ks (mAmp m) }
     go m (Run seg)   = foldl step m seg

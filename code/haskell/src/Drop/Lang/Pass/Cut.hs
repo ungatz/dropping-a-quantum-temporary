@@ -29,12 +29,12 @@ data Cut a = Cut
 -- 'initMach', which has no arrival state to give a loan, and parking a
 -- temporary that a live loan can move is anyway a statement about a wider
 -- probe space than this chain carries), or when the target is a loan:
--- the temporary's criterion (a prefix that leaves the temporary constant
--- whatever the visible input) is not the loan's (the site map factors as an
--- isometry tensor a map of the rest, not a fixed ray tensor a map of the
--- visible input, see Drop.Lang.Interp's "Loans" section) -- a different
--- statement, which this pass chain does not make, so it declines by name
--- rather than answering.
+-- Theorem 7.1 (a
+-- prefix that leaves the temporary constant whatever the visible input) is
+-- not the loan's theorem (the site map factors as an isometry tensor a map
+-- of the rest, not a fixed ray tensor a map of the visible input, see
+-- Drop.Lang.Interp's "Loans" section) -- a different theorem this pass chain
+-- does not state, so it declines by name rather than answering.
 cut :: Prog a -> String -> Either String (Cut a)
 cut prog x
   | [x] `notElem` dropSites prog   = error ("cut: no drop site named " ++ x)

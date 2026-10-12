@@ -32,14 +32,14 @@ import System.Exit (exitFailure)
 import Text.Printf (printf)
 
 import Drop.Lang.Cyclo (Cyclo)
-import Drop.Lang.Syntax (Prog, VisSpec)
+import Drop.Lang.Check (checkProgram)
 import Drop.Lang.Compile
-import Drop.Lang.Elab (flatToProgram)
+import Drop.Lang.Elab (flatToProgram, flatToProgramR)
 import Drop.Lang.Interp (probesFor)
 import Drop.Lang.Machine
 import Drop.Lang.QState (StateV, applyGate)
 import Drop.Lang.Typed
-import Drop.Lang.Parser (parseProgram)
+import Drop.Lang.Parser (SFile (..), parseFile, parseProgram, sfVis)
 import qualified Drop.Lang.Checks.Parser as TP
 
 -- A tiny counting harness, as in TypedSpec.hs ------------------------------
@@ -114,18 +114,40 @@ compileCorpus c = do
        Just (GateNotInDomain ["t", "q"] msg) ->
          msg == "not diagonal, a permutation, or a single-qubit unitary"
        _ -> False)
+  -- The output measurements read what `return` names. These two programs
+  -- return a register that is not an input, so they are the two whose
+  -- circuit the old reading (the inputs, in declared order) got wrong.
+  check1 c "copy-input.s: result reads t (q[1]), the register it returns, not the dropped input x"
+    (case lookup "copy-input.s" results of
+       Just (Right txt) -> takeLast 2 (lines txt) == ["// q[1] = t", "result[0] = measure q[1];"]
+                           && "bit[1] result;" `elem` lines txt
+       _ -> False)
+  check1 c "learns-nothing.s: result has two bits, reading x (q[0]) and a (q[1]), the registers it returns"
+    (case lookup "learns-nothing.s" results of
+       Just (Right txt) -> takeLast 2 (lines txt) == ["result[0] = measure q[0];", "result[1] = measure q[1];"]
+                           && "bit[2] result;" `elem` lines txt && "// q[1] = a" `elem` lines txt
+       _ -> False)
   where
-    tryOne f = case TP.parsed f of
+    takeLast k xs = drop (length xs - k) xs
+    tryOne f = case TP.parsedFile f of
       Left e -> do
         putStrLn ("    " ++ f ++ ": did not parse: " ++ e)
         return (baseName f, Left (Other e))
-      Right (vis, prog) -> do
-        let typed = flatToProgram vis prog
+      Right sf -> do
+        let typed = typedOf sf
         case compile typed of
           Left e -> return (baseName f, Left e)
           Right txt -> do
             writeFile (outDir ++ "/" ++ stripDotS (baseName f) ++ ".qasm") txt
             return (baseName f, Right txt)
+
+-- | A program as its file writes it: the ordinary inputs, the body, and the
+-- value its `return` names -- what `dqt compile` compiles
+-- (Drop.Lang.Report.Run.compileText). The circuit ends by measuring that
+-- value, so every file this suite writes goes through here; 'flatToProgram'
+-- would rebuild the value from the live registers in allocation order.
+typedOf :: SFile -> Program Cyclo
+typedOf sf = flatToProgramR (sfVis sf) (sfReturn sf) (sfBody sf)
 
 -- (c): JSON export of Drop.Lang.Machine's leaves ------------------------------
 
@@ -142,28 +164,38 @@ jArr xs = "[" ++ intercalate "," xs ++ "]"
 jObj :: [(String, String)] -> String
 jObj kvs = "{" ++ intercalate "," [ jStr k ++ ":" ++ v | (k, v) <- kvs ] ++ "}"
 
-leafJson :: (Config Cyclo, [Complex Double]) -> String
-leafJson (cfg, expected) = jObj
+-- | One leaf. @retQubits@ is read off the machine's own leaf, not the
+-- emitter: the value its term returns, through the layout's wire map, in
+-- the value's order -- the qubits the circuit's result[0], result[1], ...
+-- must read on this run. A leaf whose term is not a value exports none,
+-- which the checker reports as a width mismatch.
+leafJson :: [(Name, [Int])] -> (Config Cyclo, [Complex Double]) -> String
+leafJson wires (cfg, expected) = jObj
   [ ("names", jArr (map jStr (cfgNames cfg)))
   , ("dims", jArr (map (jNum . fromIntegral) (cfgDims cfg)))
   , ("hidden", jArr (map jStr (cfgHidden cfg)))
   , ("record", jArr [ jArr [jStr n, jNum (fromIntegral b)] | (n, b) <- cfgBits cfg ])
   , ("amp", jArr [ jArr [jNum (realPart z), jNum (imagPart z)] | a <- cfgAmp cfg, let z = toC a ])
   , ("expectedAmp", jArr [ jArr [jNum (realPart z), jNum (imagPart z)] | z <- expected ])
+  , ("retQubits", jArr (map (jNum . fromIntegral) retQubits))
   ]
+  where
+    retQubits = case cfgTerm cfg of
+      Return v -> concat [ maybe [] id (lookup n wires) | n <- valueNames v ]
+      _        -> []
 
 exportLeaves :: FilePath -> IO ()
-exportLeaves f = case TP.parsed f of
+exportLeaves f = case TP.parsedFile f of
   Left _ -> return ()
-  Right (vis, prog) -> exportLeavesOf (stripDotS (baseName f)) vis prog
+  Right sf -> exportLeavesOf (stripDotS (baseName f)) (typedOf sf)
 
--- | The leaves export for a program given as its parsed form, under the
--- name compile_check.py pairs with @<name>.qasm@; the corpus goes through
--- 'exportLeaves', the source-string fixtures of (k) below through this.
-exportLeavesOf :: String -> VisSpec -> Prog Cyclo -> IO ()
-exportLeavesOf name vis prog = do
-    let typed = flatToProgram vis prog
-    case layoutOnly typed of
+-- | The leaves export for a typed program, under the name compile_check.py
+-- pairs with @<name>.qasm@: the corpus arrives through 'exportLeaves', the
+-- fixtures of (k) below directly.
+exportLeavesOf :: String -> Program Cyclo -> IO ()
+exportLeavesOf name typed = do
+    let vis = progCtx typed
+    case layoutOnly of
       Left _ -> return ()  -- refused programs (rus) have nothing to export
       Right () -> do
         let probes = probesFor vis :: [(String, StateV Cyclo)]
@@ -173,6 +205,7 @@ exportLeavesOf name vis prog = do
             wireAlloc = either (const []) id (wireAllocOf typed)
             visQ = either (const []) id (visQubitsOf typed)
             liftAncilla = either (const []) id (liftAncillaOf typed)
+            wires = either (const []) id (wireQubitsOf typed)
             js = jObj
               [ ("visNames", jArr (map (jStr . fst) vis))
               , ("visDims", jArr (map (jNum . fromIntegral . snd) vis))
@@ -186,7 +219,7 @@ exportLeavesOf name vis prog = do
                                    | (n, qs, psi) <- wireAlloc ])
               , ("liftAncilla", jArr [ jNum (fromIntegral q) | (_, q) <- liftAncilla ])
               , ("probes", jArr [ jObj [ ("probe", jNum (fromIntegral i))
-                                       , ("leaves", jArr (map leafJson leaves)) ]
+                                       , ("leaves", jArr (map (leafJson wires) leaves)) ]
                                  | (i, leaves) <- perProbe ])
               ]
         writeFile (outDir ++ "/" ++ name ++ ".leaves.json") js
@@ -194,7 +227,7 @@ exportLeavesOf name vis prog = do
     -- A cheap re-check of the domain (dimension only), just so a qutrit
     -- program's leaves are not exported (Drop.Lang.Compile already refused it
     -- in 'compileCorpus'; this mirrors that without recomputing 'compile').
-    layoutOnly typed = if any (\(_, d) -> not (isPow2 d)) (progCtx typed) then Left () else Right ()
+    layoutOnly = if any (\(_, d) -> not (isPow2 d)) (progCtx typed) then Left () else Right ()
     isPow2 n = n >= 2 && (n .&. (n - 1)) == 0
 
 -- (d): the Householder reflection, the reclaiming proposition --------------------------
@@ -243,7 +276,7 @@ reflectionChecks c = do
         [ ("psi=|0>, g=|->",              ket0, [1/sqrt 2 :+ 0, negate (1/sqrt 2) :+ 0])
         , ("psi=|0>, g=|1> (tie-break)",   ket0, ket1)
         , ("psi=|0>, g=(|0>+i|1>)/sqrt2",  ket0, [1/sqrt 2 :+ 0, 0 :+ (1/sqrt 2)])
-        , ("dirty psi=|+>, g=|+> (R = I)", ketPlus, ketPlus)
+        , ("non-basis psi=|+>, g=|+> (R = I)", ketPlus, ketPlus)
         ]
   forM_ cases $ \(nm, psi, g) -> do
     let r = reflectionR psi g
@@ -263,9 +296,9 @@ reflectionChecks c = do
 
 -- (e): the third 'Admissible' clause -- k>=2, psi and g
 -- proportional but neither a basis state -- via 'proportionalTo' directly
--- and via the fixture test/fixtures/dirty-nonbasis.s (a 2-qubit dirty
--- register allocated non-basis, hit with a cancelling Swap;Swap, and
--- dropped: the certificate is exactly the allocation ray).
+-- and via the fixture test/fixtures/dirty-nonbasis.s (a 2-qubit temporary
+-- allocated non-basis, hit with a cancelling Swap;Swap, and dropped: the
+-- certificate is exactly the allocation ray).
 
 reclaimSiteChecks :: Counters -> IO ()
 reclaimSiteChecks c = do
@@ -292,12 +325,27 @@ reclaimSiteChecks c = do
           putStrLn ("    REFUSED: " ++ showCompileError e)
         Right txt -> do
           check1 c "dirty-nonbasis.s compiles" True
-          check1 c "dirty-nonbasis.s: no \"not emitted\" comment anywhere in the circuit"
-            (not ("not emitted" `isInfixOf` txt))
+          check1 c "dirty-nonbasis.s: safe non-basis preparation is assumed, not emitted"
+            ("// temporary a, preparation of psi assumed (not emitted):" `isInfixOf` txt)
           check1 c "dirty-nonbasis.s: no reclaim comment/gate for 'a' at all"
             (not ("reclaim of a" `isInfixOf` txt))
+          check1 c "dirty-nonbasis.s: safe site is not emitted as dropped unsafe"
+            (not ("dropped unsafe" `isInfixOf` txt))
           check1 c "dirty-nonbasis.s: the cancelling Swap;Swap is still emitted (site reached, not vacuous)"
             (length (filter (\l -> take 4 l == "swap") (lines txt)) == 2)
+  case TP.parsed "test/fixtures/dirty-nonbasis-unsafe.s" of
+    Left e -> do
+      check1 c "dirty-nonbasis-unsafe.s parses" False
+      putStrLn ("    did not parse: " ++ e)
+    Right (vis, prog) ->
+      case compile (flatToProgram vis prog) of
+        Left e -> do
+          check1 c "dirty-nonbasis-unsafe.s compiles" False
+          putStrLn ("    REFUSED: " ++ showCompileError e)
+        Right txt -> do
+          check1 c "dirty-nonbasis-unsafe.s compiles" True
+          check1 c "dirty-nonbasis-unsafe.s: visible interaction remains marked unsafe"
+            ("a dropped unsafe: stays live" `isInfixOf` txt)
 
 -- (f): loans -- mcx-dirty.s (B = I, nothing
 -- emitted), mcx-dirty-x.s (B = X, one U emitted), mcx-dirty-half.s (unsafe),
@@ -374,21 +422,23 @@ mixedLoanChecks c = do
 
 srcReadsLoan, srcReadsLoanBack :: String
 srcReadsLoan =
-  "prog temp_reads_loan (x : [2], loan a : [2]) : [2] * [2] {\n\
+  "prog temp_reads_loan (x : [2], loan a : [2]) : [2] {\n\
   \    new t : [2] @ |0>;\n\
   \    CX a t;\n\
   \    drop t;\n\
-  \    return (x, a)\n\
+  \    drop a;\n\
+  \    return x\n\
   \}"
 srcReadsLoanBack =
-  "prog temp_reads_loan_back (x : [2], loan a : [2]) : [2] * [2] {\n\
+  "prog temp_reads_loan_back (x : [2], loan a : [2]) : [2] {\n\
   \    new t : [2] @ |0>;\n\
   \    CX a t;  CX a t;\n\
   \    drop t;\n\
-  \    return (x, a)\n\
+  \    drop a;\n\
+  \    return x\n\
   \}"
 
--- (h) a block of SEVERAL registers holding a loan: the site definition's clause (4) with
+-- (h) a block of SEVERAL registers holding a loan: the site definition's clause (3) with
 -- B : H_loan -> H_block (Drop.Lang.Interp.loanResultS). A square B (the block
 -- is its loans and nothing else) is emitted in three shapes and no more --
 -- B the identity (nothing to undo), B on one qubit, and B a permutation of
@@ -454,16 +504,16 @@ srcBlockRect =
 -- loans whose block factor is B = B' (x) g~, the emitter writes B'^dagger on
 -- the loan qubits and the reclaiming reflection through psi - g~ on the
 -- temporary qubits, in that order. Also here: the block factor that
--- entangles a loan with a temporary (safe by the site definition's clause (4), no product gate,
+-- entangles a loan with a temporary (safe by the site definition's clause (3), no product gate,
 -- "not emitted"), a loan factor on two qubits (refused as the square case
 -- is), `drop ()` (a block of dimension one under the site definition's clause (1), admitted by the
--- parser, nothing to reclaim), and a tuple dropped out of
+-- parser since today, nothing to reclaim), and a tuple dropped out of
 -- allocation order (the certificate, psi and the qubit list all read in
--- the drop's order -- Drop.Lang.QState.factorSplitOrd; read in machine order the
+-- the drop's order -- Drop.Lang.QState.factorSplitOrd; before today the
 -- certificate alone read in machine order and this program's reclaim was
 -- silently skipped). Every fixture is exported to out-typed/ so that
 -- qasm3/compile_check.py simulates its emitted circuit against the
--- machine's expected state, the check the paper's compilation theorem stands on.
+-- machine's expected state, the numerical check used for compilation.
 mixedProductChecks :: Counters -> IO ()
 mixedProductChecks c = do
   putStrLn "(k) a mixed block of product form: B'^dagger on the loans, the reflection on the temporaries"
@@ -487,7 +537,7 @@ mixedProductChecks c = do
                    && length [ l | l <- lines body, "U(" `isInfixOf` l ] == 1
                    && not ("not emitted" `isInfixOf` txt)) ]
   emit "mixed-entangled" srcMixedEntangled
-    [ ("H t; CX t a; drop (a, t): safe by the site definition's clause (4), B entangles the loan with the temporary, not emitted"
+    [ ("H t; CX t a; drop (a, t): safe by the site definition's clause (3), B entangles the loan with the temporary, not emitted"
       , \txt -> "not emitted" `isInfixOf` txt && "entangles" `isInfixOf` txt)
     , ("and not called unsafe"
       , \txt -> not ("dropped unsafe" `isInfixOf` txt)) ]
@@ -505,23 +555,52 @@ mixedProductChecks c = do
       , \txt -> "ctrl @ x" `isInfixOf` afterBody txt || "cx" `isInfixOf` afterBody txt)
     , ("and no refusal"
       , \txt -> not ("not emitted" `isInfixOf` txt) && not ("dropped unsafe" `isInfixOf` txt)) ]
+  -- A return that depends on a lift. No program file can write one (a
+  -- branch of the surface syntax returns exactly the registers it was
+  -- handed), so the term is built directly; it is a program of the language,
+  -- which is checked first. The circuit must measure (y, x) on one record
+  -- and (x, y) on the other, so the measurements sit inside the branches.
+  check1 c "branch-return-order is a typed program: p = lift[{1}] x; if p then return (y, x) else return (x, y)"
+    (checkProgram progBranchReturnOrder == Right (TTensor (TReg 2) (TReg 2)))
+  emitTyped "branch-return-order" progBranchReturnOrder
+    [ ("each branch measures its own return value, in its order, and nothing is measured after the if"
+      , \txt -> map trim (dropWhile (not . ("if (" `isInfixOf`)) (lines txt)) ==
+                  [ "if (c[0] == 1) {"
+                  , "result[0] = measure q[1];", "result[1] = measure q[0];"
+                  , "} else {"
+                  , "result[0] = measure q[0];", "result[1] = measure q[1];"
+                  , "}" ])
+    , ("result has the returned value's two bits"
+      , \txt -> "bit[2] result;" `elem` lines txt) ]
   where
+    trim = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
     -- the emitted text after the last line of the program's own gates: the
     -- fixtures are written so that their reclaiming lines follow a marker
     -- gate (the last statement before the drop is what the drop reclaims)
     afterBody txt = unlines (drop 1 (dropWhile (not . ("// q[0] = x" `isInfixOf`)) (lines txt)))
-    emit nm src expectations = case parseProgram src of
+    emit nm src expectations = case parseFile src of
       Left e -> do
         check1 c (nm ++ " parses") False
         putStrLn ("    did not parse: " ++ e)
-      Right (vis, prog) -> case compile (flatToProgram vis prog) of
-        Left e -> do
-          mapM_ (\(cnm, _) -> check1 c cnm False) expectations
-          putStrLn ("    " ++ nm ++ " REFUSED: " ++ showCompileError e)
-        Right txt -> do
-          writeFile (outDir ++ "/" ++ nm ++ ".qasm") txt
-          exportLeavesOf nm vis prog
-          mapM_ (\(cnm, p) -> check1 c cnm (p txt)) expectations
+      Right sf -> emitTyped nm (typedOf sf) expectations
+    emitTyped nm typed expectations = case compile typed of
+      Left e -> do
+        mapM_ (\(cnm, _) -> check1 c cnm False) expectations
+        putStrLn ("    " ++ nm ++ " REFUSED: " ++ showCompileError e)
+      Right txt -> do
+        writeFile (outDir ++ "/" ++ nm ++ ".qasm") txt
+        exportLeavesOf nm typed
+        mapM_ (\(cnm, p) -> check1 c cnm (p txt)) expectations
+
+-- | @prog (x : [2], y : [2]) : [2] * [2] { p = lift[{1}] x; if p then return
+-- (y, x) else return (x, y) }@, as a term: the lift reads x in the basis,
+-- and the record decides the order the two registers come back in.
+progBranchReturnOrder :: Program Cyclo
+progBranchReturnOrder = Program [("x", 2), ("y", 2)]
+  (SDo (StLift "p" [1] "x")
+    (SIf (BParam "p")
+      (SReturn (VPair (VVar "y") (VVar "x")))
+      (SReturn (VPair (VVar "x") (VVar "y")))))
 
 srcMixedXPlus, srcMixedPlusXReversed, srcMixedSwapPlus, srcMixedEntangled,
   srcMixedTwoQubitLoanFactor, srcDropUnit, srcTupleOutOfOrder :: String
@@ -591,13 +670,13 @@ srcTupleOutOfOrder =
 -- 'emitGeneralReflectionOps' (checked numerically against 'reflectionR' in
 -- 'generalReflectionChecks' below, and against a real OpenQASM 3 parser by
 -- qasm3/compile_check.py against out-typed/bell-pair.qasm), so bell-pair.s
--- carries a real reclaiming circuit and no "not emitted" comment.
+-- now carries a real reclaiming circuit and no "not emitted" comment.
 bellPairChecks :: Counters -> IO ()
 bellPairChecks c = do
   putStrLn "(i) bell-pair.s vs bell-pair-split.s: which program a context compares"
   checkQasm "bell-pair.s" "programs/bell-pair.s"
     [ ("bell-pair.s compiles", const True)
-    , ("bell-pair.s: drop (a,b) is emitted as a circuit, with no refusal comment"
+    , ("bell-pair.s: drop (a,b) is emitted as a circuit, not the old refusal comment"
       , \txt -> not ("not emitted" `isInfixOf` txt))
     , ("bell-pair.s: the general reclaiming reflection's U(...) lines are present"
       , \txt -> "U(" `isInfixOf` txt)
@@ -746,8 +825,8 @@ generalReflectionChecks c = do
 -- not two -- so that case is checked as a required decline (Nothing), not
 -- forced into the short form. Then, for k in {2, 3}, 20 seeded random cases
 -- each of two shapes: 'zeroPsiLoop' (psi = |0..0>, g random two-support on
--- {0, j} for random j -- the reliable "simplest" construction the task
--- names, since w = psi - g~ then has support inside {0, j} by the same
+-- {0, j} for random j -- a simple construction, since w = psi - g~ then
+-- has support inside {0, j} by the same
 -- by-hand argument as the Bell case above) and 'bothTwoSupportLoop' (a
 -- genuinely random, non-basis psi AND g both supported on the same random
 -- pair {p, q} with p, q /= 0 -- "random psi" together with "g supported on
@@ -825,6 +904,150 @@ twoSupportReflectionChecks c = do
         checkShort (nm ++ show n) k psi g
         bothTwoSupportLoop k d nm rng3 (n - 1 :: Int)
 
+-- (l) the fragment's conditions on drops, and the block factor's unit
+-- scalar. A loan's block factor is fixed only up to a unit scalar, so its
+-- shape is tested after 'normaliseSquareIso' divides out the phase of the
+-- first nonzero entry of its first column: two loans swapped beside diag(i,1) on another
+-- register have B read as i SWAP, and before the division the block was left
+-- live with a "not emitted" comment and the loans came back swapped. Both
+-- programs are exported to out-typed/ for qasm3/compile_check.py. A loan
+-- dropped after a lift or an if, and an input not marked loan dropped at a
+-- site that is safe, with a nonzero site map, on some record, are refused by
+-- 'fragmentSafety' with the drop they name (before, the first stopped the
+-- compiler with an internal error and the second could emit a circuit no
+-- result covers); an unsafe drop of such an input emits no gate and still
+-- compiles, also when the site map is zero on another record, which is not
+-- counted as safe (unmunreach.s is a negative control for that rule).
+fragmentDropChecks :: Counters -> IO ()
+fragmentDropChecks c = do
+  putStrLn "(l) the fragment's conditions on drops, and the block factor's unit scalar"
+  emit "loan-phase-swap" srcLoanPhaseSwap
+    [ ("two loans swapped beside diag(i,1) on x: B is read as i SWAP and emitted, not skipped"
+      , \txt -> not ("not emitted" `isInfixOf` txt) && not ("dropped unsafe" `isInfixOf` txt))
+    , ("the program's swap, then the reclaiming SWAP as three CNOTs"
+      , \txt -> ["swap q[1], q[2];", "cx q[1], q[2];", "ctrl @ x q[2], q[1];", "cx q[1], q[2];"]
+                  `isInfixOfL` lines txt) ]
+  emit "loan-phase-identity" srcLoanPhaseIdentity
+    [ ("two untouched loans beside diag(i,1) on x: B is read as i I, and nothing is emitted"
+      , \txt -> not ("reclaim" `isInfixOf` txt) && not ("not emitted" `isInfixOf` txt)) ]
+  refused "a loan dropped after an if, with no lift, is refused" srcLoanAfterIf ["a"] loanMsg
+  refused "an unsafe loan drop after an if is refused too" srcLoanAfterIfUnsafe ["a"] loanMsg
+  refused "a loan dropped after a lift is refused" srcLoanAfterLift ["a"] loanMsg
+  refused "a safe drop of an input not marked loan is refused" srcUnmarkedSafe ["x"] inputMsg
+  refused "a safe pair holding an input not marked loan is refused" srcUnmarkedPair ["x", "u"] inputMsg
+  case parseFile srcUnmarkedUnsafe of
+    Left e -> check1 c "unmarked-unsafe parses" False >> putStrLn ("    did not parse: " ++ e)
+    Right sf -> case compile (typedOf sf) of
+      Left e -> do
+        check1 c "an unsafe drop of an input not marked loan still compiles" False
+        putStrLn ("    REFUSED: " ++ showCompileError e)
+      Right txt -> check1 c "an unsafe drop of an input not marked loan still compiles, and stays live"
+                     ("x dropped unsafe: stays live" `isInfixOf` txt)
+  case parseFile srcUnmarkedUnreach of
+    Left e -> check1 c "unmarked-unreach parses" False >> putStrLn ("    did not parse: " ++ e)
+    Right sf -> case compile (typedOf sf) of
+      Left e -> do
+        check1 c "an input not marked loan, unsafe where reachable and zero elsewhere, is not refused" False
+        putStrLn ("    REFUSED: " ++ showCompileError e)
+      Right txt -> check1 c "an input not marked loan, unsafe where reachable and zero elsewhere, is not refused"
+                     ("x dropped unsafe" `isInfixOf` txt)
+  where
+    loanMsg = "it drops a loan after a lift or an if"
+    inputMsg = "it drops an input not marked loan"
+    isInfixOfL needle hay =
+      any (\i -> map trim (take (length needle) (drop i hay)) == needle) [0 .. length hay]
+    trim = dropWhile (== ' ') . reverse . dropWhile (== ' ') . reverse
+    emit nm src expectations = case parseFile src of
+      Left e -> do
+        check1 c (nm ++ " parses") False
+        putStrLn ("    did not parse: " ++ e)
+      Right sf -> case compile (typedOf sf) of
+        Left e -> do
+          mapM_ (\(cnm, _) -> check1 c cnm False) expectations
+          putStrLn ("    " ++ nm ++ " REFUSED: " ++ showCompileError e)
+        Right txt -> do
+          writeFile (outDir ++ "/" ++ nm ++ ".qasm") txt
+          exportLeavesOf nm (typedOf sf)
+          mapM_ (\(cnm, pr) -> check1 c cnm (pr txt)) expectations
+    refused nm src names msg = case parseFile src of
+      Left e -> check1 c (nm ++ ": parses") False >> putStrLn ("    did not parse: " ++ e)
+      Right sf -> case compile (typedOf sf) of
+        Left (DropOutsideFragment xs why) -> check1 c nm (xs == names && msg `isInfixOf` why)
+        Left e -> check1 c nm False >> putStrLn ("    refused otherwise: " ++ showCompileError e)
+        Right _ -> check1 c nm False >> putStrLn "    compiled"
+
+srcLoanPhaseSwap, srcLoanPhaseIdentity, srcLoanAfterIf, srcLoanAfterIfUnsafe, srcLoanAfterLift,
+  srcUnmarkedSafe, srcUnmarkedPair, srcUnmarkedUnsafe, srcUnmarkedUnreach :: String
+srcLoanPhaseSwap =
+  "prog loan_phase_swap (loan a : [2], loan b : [2], x : [2]) : [2] {\n\
+  \    diag x (i, 1);\n\
+  \    Swap a b;\n\
+  \    drop (a, b);\n\
+  \    return x\n\
+  \}"
+srcLoanPhaseIdentity =
+  "prog loan_phase_identity (loan a : [2], loan b : [2], x : [2]) : [2] {\n\
+  \    diag x (i, 1);\n\
+  \    drop (a, b);\n\
+  \    return x\n\
+  \}"
+srcLoanAfterIf =
+  "prog loan_after_if (loan a : [2], x : [2]) : [2] {\n\
+  \    if 1 { X a; } else { X a; }\n\
+  \    drop a;\n\
+  \    return x\n\
+  \}"
+srcLoanAfterIfUnsafe =
+  "prog loan_after_if_unsafe (loan a : [2], x : [2]) : [2] {\n\
+  \    if 0 { CX a x; } else { CX a x; }\n\
+  \    drop a;\n\
+  \    return x\n\
+  \}"
+srcLoanAfterLift =
+  "prog loan_after_lift (loan a : [2], x : [2]) : [2] {\n\
+  \    new t : [2] @ |0>;\n\
+  \    H t;\n\
+  \    p = lift[{0}] t;\n\
+  \    X a;\n\
+  \    drop a;\n\
+  \    drop t;\n\
+  \    return x\n\
+  \}"
+srcUnmarkedSafe =
+  "prog unmarked_safe (x : [2]) : [2] {\n\
+  \    new t : [2] @ |0>;\n\
+  \    Swap x t;\n\
+  \    X x;\n\
+  \    drop x;\n\
+  \    return t\n\
+  \}"
+srcUnmarkedPair =
+  "prog unmarked_pair (x : [2]) : [2] {\n\
+  \    new t : [2] @ |0>;\n\
+  \    new u : [2] @ |0>;\n\
+  \    Swap x t;\n\
+  \    X u;\n\
+  \    drop (x, u);\n\
+  \    return t\n\
+  \}"
+srcUnmarkedUnsafe =
+  "prog unmarked_unsafe (x : [2]) : [2] {\n\
+  \    new t : [2] @ |0>;\n\
+  \    X x;\n\
+  \    drop x;\n\
+  \    return t\n\
+  \}"
+-- In unmunreach, dropping x is unsafe on the record where the lift keeps t;
+-- its site map is zero on the other record.
+srcUnmarkedUnreach =
+  "prog unmunreach (x : [2]) : 1 {\n\
+  \    new t : [2] @ |0>;\n\
+  \    p = lift[{0}] t;\n\
+  \    drop x;\n\
+  \    drop t;\n\
+  \    return ()\n\
+  \}"
+
 main :: IO ()
 main = do
   c <- newCounters
@@ -836,6 +1059,7 @@ main = do
   mixedLoanChecks c
   blockLoanChecks c
   mixedProductChecks c
+  fragmentDropChecks c
   bellPairChecks c
   generalReflectionChecks c
   twoSupportReflectionChecks c

@@ -1,30 +1,13 @@
-"""compile_check.py -- numeric verification of Drop.Lang.Compile's OpenQASM 3
-output.
+"""Numerically compare emitted OpenQASM 3 circuits with Haskell leaf data.
 
-For every <name>.qasm in out-typed/, parsed by the reference `openqasm3`
-package, this file:
+For each matching pair of files in out-typed/, parse the circuit, simulate
+the visible-input probes and every measurement branch, and compare the result
+with the expected leaf amplitude up to one global phase (tolerance 1e-9).
+Allocated non-basis temporaries are seeded at their declared state because
+their preparation is assumed and not emitted. The checker also verifies that
+each output bit reads the corresponding qubit of the returned value.
 
-  * builds a small statevector simulator over the parsed AST -- `engine.py`
-    cannot execute `ctrl(n)@`/`negctrl`, the `U(theta,phi,lambda)` gate, or
-    classical `if`/`else` feed-forward, so all three are implemented here
-    (see 'apply_modified', 'gate_matrix' and 'run_stmts' below);
-  * runs the circuit on every computational-basis input of the visible
-    registers, plus the all-ones probe (matching Drop.Lang.Interp.probesFor,
-    which <name>.leaves.json's probes were built from), seeding a dirty
-    (non-basis) loan's qubits directly at its declared psi since the
-    circuit itself carries no preparation gate for it;
-  * follows EVERY measurement branch deterministically (no sampling: each
-    branch keeps its exact, unnormalised sub-amplitude, mirroring
-    Drop.Lang.Machine's 'step' on a 'CLift');
-  * matches each reached (probe, branch) pair to the leaf in
-    <name>.leaves.json whose 'record' translates (via 'liftInfo') to the
-    same raw classical bits, and compares the circuit's final statevector
-    to that leaf's 'expectedAmp' -- Drop.Lang.Machine's own leaf amplitude
-    with the reclaiming gate already applied at every site
-    Drop.Lang.Compile found SAFE (Drop.Lang.Compile.expectedFinalState) --
-    entrywise, tolerance 1e-9.
-
-Run from this directory:  nice -n 19 python3 compile_check.py
+Run from this directory: python3 compile_check.py
 """
 import glob
 import json
@@ -197,10 +180,16 @@ def resolve_qubit(qarg, subst):
     raise ValueError(f"cannot resolve qubit argument {qarg}")
 
 
-def resolve_bit_target(target):
-    """c[k] or result[k] -> (regname, k)."""
+def resolve_bit_target(target, creg_sizes):
+    """c[k] or result[k] -> (regname, k), refusing a register never
+    declared and an index past its declared width."""
     if isinstance(target, qast.IndexedIdentifier):
-        return target.name.name, int(target.indices[0][0].value)
+        reg, k = target.name.name, int(target.indices[0][0].value)
+        if reg not in creg_sizes:
+            raise ValueError(f"bit register {reg} is not declared")
+        if not 0 <= k < creg_sizes[reg]:
+            raise ValueError(f"bit {reg}[{k}] is past the declared width {creg_sizes[reg]}")
+        return reg, k
     raise ValueError(f"cannot resolve classical target {target}")
 
 
@@ -211,7 +200,11 @@ def eval_condition(cond, bits):
             reg = lhs.collection.name
             k = int(lhs.index[0].value)
             v = int(eval_expr(cond.rhs))
-            return bits.get((reg, k), 0) == v
+            # The emitter measures each lift's bit before any `if` reads it;
+            # a bit no measurement has written is refused, not read as 0.
+            if (reg, k) not in bits:
+                raise ValueError(f"the condition reads {reg}[{k}], which no measurement has written")
+            return bits[(reg, k)] == v
         raise ValueError(f"unsupported condition lhs {lhs}")
     if isinstance(cond, qast.UnaryExpression) and cond.op.name == "!":
         return not eval_condition(cond.expression, bits)
@@ -271,7 +264,7 @@ class Program:
         rest = stmts[1:]
         if isinstance(st, qast.QuantumMeasurementStatement):
             q = qubit_index(st.measure.qubit)
-            reg, k = resolve_bit_target(st.target)
+            reg, k = resolve_bit_target(st.target, self.creg_sizes)
             idx0 = [slice(None)] * self.nq
             idx0[q] = 1
             s0 = state.copy()
@@ -280,10 +273,16 @@ class Program:
             idx1[q] = 0
             s1 = state.copy()
             s1[tuple(idx1)] = 0
+            # Which qubit each bit of the register read, in the order written:
+            # the output check below compares result's against the value the
+            # machine's leaf returns.
+            read = bits.get(("read", reg), ()) + ((k, q),)
             b0 = dict(bits)
             b0[(reg, k)] = 0
+            b0[("read", reg)] = read
             b1 = dict(bits)
             b1[(reg, k)] = 1
+            b1[("read", reg)] = read
             return self.run_stmts(rest, s0, b0) + self.run_stmts(rest, s1, b1)
         if isinstance(st, qast.BranchingStatement):
             cond = eval_condition(st.condition, bits)
@@ -335,7 +334,7 @@ def global_phase_deviation(got, expected):
     """Max entrywise deviation after fitting a single global phase (the
     'diff' gate's own header comment: the h;x;cz;x;h decomposition of
     Grover's 2|s><s| - I is that gate only up to the global phase -1, a
-    standard, physically unobservable, per-leaf ambiguity). A structural bug
+    standard, physically unobservable, per-leaf ambiguity. A structural bug
     would still show up: fitting one scalar cannot repair the RELATIVE
     phase or magnitude between two different entries."""
     if expected.size == 0:
@@ -379,6 +378,7 @@ def check_program(name):
     ancilla_qubits = sorted({int(q) for q in data.get("liftAncilla", [])}, reverse=True)
 
     leaves_compared = 0
+    outputs_checked = 0
     max_dev = 0.0
     mismatches = []
 
@@ -400,7 +400,7 @@ def check_program(name):
                     continue
                 bit_idx, sv = lift_info[pname]
                 want[("c", bit_idx)] = sv if int(survived) == 1 else 1 - sv
-            # 'result[i] = measure q[..]' (Drop.Lang.Compile.finalMeasureLines)
+            # 'result[i] = measure q[..]' (Drop.Lang.Compile.outputMeasureLines)
             # re-measures a qubit an earlier 'c[k] = measure' may already
             # have collapsed (or one no lift ever touched), splitting each
             # true leaf into several branches that agree on every 'c[..]'
@@ -410,15 +410,36 @@ def check_program(name):
             # them is not identically the zero vector.
             match = None
             found = False
+            reads = set()
             for st, bits in branches:
                 relevant = {k: v for k, v in bits.items() if k[0] == "c"}
                 if relevant == want:
                     match = st if not found else match + st
                     found = True
+                    reads.add(bits.get(("read", "result"), ()))
             expected = np.array([complex(re, im) for re, im in leaf["expectedAmp"]])
             if not found:
                 mismatches.append(f"probe {p}: no branch found for record {leaf['record']} (want {want})")
                 continue
+            # The output check: on this record, result[k] must read the k-th
+            # qubit of the value the machine's leaf returns, each bit once, in
+            # order, and result must be exactly that wide. The state
+            # comparison below cannot see this: it sums over the result bits.
+            ret = [int(q) for q in leaf["retQubits"]]
+            want_reads = tuple(enumerate(ret))
+            if reads != {want_reads}:
+                got_reads = sorted(reads)
+                mismatches.append(
+                    f"probe {p}, record {leaf['record']}: result reads {got_reads}, "
+                    f"the value returned is on qubits {ret}"
+                )
+            elif prog.creg_sizes.get("result", 0) != len(ret):
+                mismatches.append(
+                    f"probe {p}, record {leaf['record']}: result has {prog.creg_sizes.get('result', 0)} bits, "
+                    f"the value returned has {len(ret)} qubits"
+                )
+            else:
+                outputs_checked += 1
             reduced = match
             for q in ancilla_qubits:
                 off = np.take(reduced, 1, axis=q)
@@ -440,33 +461,40 @@ def check_program(name):
             if dev > TOL:
                 mismatches.append(f"probe {p}, record {leaf['record']}: max deviation {dev:.3g}")
 
-    return leaves_compared, max_dev, mismatches
+    return leaves_compared, outputs_checked, max_dev, mismatches
 
 
 def main():
     names = sorted(
         os.path.basename(p)[: -len(".qasm")] for p in glob.glob(os.path.join(OUT_DIR, "*.qasm"))
     )
+    if not names:
+        sys.exit(f"No circuits in {OUT_DIR}/; run cabal test dqt-compile-test first.")
     total_leaves = 0
+    total_outputs = 0
     total_fail = 0
     print(f"{len(names)} emitted program(s) in {OUT_DIR}/")
     for name in names:
         result = check_program(name)
         if result is None:
-            print(f"-- {name}: no leaves.json, skipped")
+            print(f"-- {name}: missing leaves.json [MISMATCH]")
+            total_fail += 1
             continue
-        leaves_compared, max_dev, mismatches = result
+        leaves_compared, outputs_checked, max_dev, mismatches = result
         total_leaves += leaves_compared
+        total_outputs += outputs_checked
         status = "OK" if not mismatches else "MISMATCH"
-        print(f"-- {name}: {leaves_compared} leaves compared, max deviation {max_dev:.3g}  [{status}]")
+        print(f"-- {name}: {leaves_compared} leaves compared, max deviation {max_dev:.3g}, "
+              f"result read right on {outputs_checked}  [{status}]")
         for m in mismatches[:20]:
             print(f"     {m}")
             total_fail += 1
         if len(mismatches) > 20:
             print(f"     ... and {len(mismatches) - 20} more")
             total_fail += len(mismatches) - 20
-    print(f"\n{total_leaves} leaves compared across {len(names)} programs, {total_fail} mismatch(es)")
-    if total_fail:
+    print(f"\non {total_outputs} leaves, result[k] reads the k-th qubit of the value the leaf returns")
+    print(f"{total_leaves} leaves compared across {len(names)} programs, {total_fail} mismatch(es)")
+    if total_fail or total_leaves == 0:
         sys.exit(1)
 
 

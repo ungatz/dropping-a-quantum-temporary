@@ -18,8 +18,8 @@ import Drop.Lang.Cyclo (Cyclo, toQS2, iC)
 import Drop.Lang.QState
 import Drop.Lang.Syntax
 import Drop.Lang.Interp
-import Drop.Lang.Parser (parseProgram, gateTable)
-import Drop.Lang.Report.Run (wellFormed)
+import Drop.Lang.Parser (gateTable)
+import Drop.Lang.Report.Run (surfaceProgram)
 
 -- Gate labels, read back from the matrix
 
@@ -70,7 +70,7 @@ regsOf c = case c of
 cmdCells :: Cmd Cyclo -> [(String, String)]
 cmdCells c = case c of
   New x _        -> [(x, "(new)")]
-  NewState x _ _ -> [(x, "(dirty)")]
+  NewState x _ _ -> [(x, "(non-basis)")]
   Loan x _   -> [(x, "(loan)")]
   Gate g xs      -> [ (x, "[" ++ gateLabel g ++ "]") | x <- xs ]
   Lift _ x _     -> [(x, "[lift]")]
@@ -223,23 +223,20 @@ renderSelection vis prog inputVec sel =
 
 -- Entry points
 
--- | Trace a program text: refuse what 'wellFormed' refuses, then run it
+-- | Trace a program text: refuse what 'surfaceProgram' refuses, then run it
 -- frame by frame, once per selection.
 traceText :: String -> Maybe String -> Either String String
 traceText src inputName = do
-  (vis, prog) <- parseProgram src
-  case wellFormed prog of
-    Just err -> Left err
-    Nothing  -> do
-      let probes = probesFor vis :: [(String, StateV Cyclo)]
-          nm     = fromMaybe "e0" inputName
-      inputVec <- case lookup nm probes of
-        Just v  -> Right v
-        Nothing -> Left ("no test input named " ++ nm ++ "; try one of "
-                         ++ intercalate ", " (map fst probes))
-      let liftCount = length [ () | Lift {} <- prog ]
-          sels      = if liftCount == 0 then [[]] else allSelections liftCount
-      Right (unlines (concatMap (renderSelection vis prog inputVec) sels))
+  (vis, prog) <- surfaceProgram src
+  let probes = probesFor vis :: [(String, StateV Cyclo)]
+      nm     = fromMaybe "e0" inputName
+  inputVec <- case lookup nm probes of
+    Just v  -> Right v
+    Nothing -> Left ("no test input named " ++ nm ++ "; try one of "
+                     ++ intercalate ", " (map fst probes))
+  let liftCount = length [ () | Lift {} <- prog ]
+      sels      = if liftCount == 0 then [[]] else allSelections liftCount
+  Right (unlines (concatMap (renderSelection vis prog inputVec) sels))
 
 -- | Read a file, trace it, and print the trace.  A parse error, a refused
 -- program or an unknown test input goes to standard error.

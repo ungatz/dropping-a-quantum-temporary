@@ -1,9 +1,7 @@
 -- |
--- The check suite lists the paper's claims, each paired with the code that
--- decides it, so a red line names a theorem, not a function. It is not a
--- property-based sweep: one check per claim, on the programs the paper
--- discusses. The last three checks gate the package: no inexact
--- arithmetic, every dirty ancilla on a unit state, the language suite green.
+-- Named checks cover selected examples across both verdict routes; they are
+-- regression checks, not a property-based sweep. The final checks cover
+-- source arithmetic, allocated-state validity, and the language suite.
 module Main (main) where
 
 import Control.Monad (filterM, unless)
@@ -162,7 +160,7 @@ checks =
 
 
   , Check "slice-Gram-and-Choi-ranks-agree"
-      "the stacked Kraus blocks, their Gram matrix and the Choi matrix have one rank"
+      "the three matrices of the splitting section have one rank between them"
       (and [ ranksAgree (tpTmpDim tp) (tpVisDim tp) (coreMap tp)
            | (_, tp) <- typedCatalogue ])
 
@@ -182,7 +180,7 @@ checks =
 
 
   , Check "the-verdicts-are-the-expected-ones"
-      "every catalogue program receives the verdict the paper claims for it"
+      "every catalogue program receives its expected verdict"
       (and [ maybe False (\tp -> isSafe tp == want) (lookup n typedCatalogue)
            | (n, want) <- expectedVerdicts ]
        && length expectedVerdicts == length catalogue)
@@ -245,7 +243,7 @@ checks =
       "the lifted witness is oracle-split; deleting its read makes it constant"
       (case (checkLProgram liftedWitness, checkLProgram liftedWitnessNoRead) of
          (Right a, Right b) -> oracleSplit a
-                               && everySoundRecordObliviousVerdictRejects a
+                               && everySoundStaticDisciplineRejects a
                                && constantProfile b && not (oracleSplit b)
          _                  -> False)
 
@@ -657,7 +655,7 @@ coreMapsEverywhere =
      | p <- liftedExamples, Right tp <- [checkLProgram p]
      , tr <- allTraces (ltDepth tp) ]
 
--- | The lifted examples of "Drop.Theory.Lifted", every one the paper discusses.
+-- | Lifted-program examples for Drop.Theory.Lifted.
 liftedExamples :: [LProgram]
 liftedExamples =
   [ liftedWitness, liftedWitnessNoRead, classicalCoreNaiveEncoding

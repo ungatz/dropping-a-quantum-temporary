@@ -1,0 +1,36 @@
+\usepackage{amsmath}
+\usepackage[T1]{fontenc}
+\usepackage[tt=false, type1=true]{libertine}
+\usepackage[varqu]{zi4}
+\usepackage[libertine]{newtxmath}
+\usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
+
+\newcommand{\Z}{\mathbb{Z}}
+
+\definecolor{ink}{HTML}{16191D}
+\definecolor{accent}{HTML}{1F4E79}
+\definecolor{accentsoft}{HTML}{E8EEF4}
+\definecolor{accentwarm}{HTML}{9A5B00}
+\definecolor{accentplum}{HTML}{8E2F5F}
+\definecolor{muted}{HTML}{5B6470}
+\definecolor{hairline}{HTML}{C9CFD6}
+
+\tikzset{
+    house/.style={
+    >={Stealth[length=2.1mm, width=1.6mm]},
+    line width=0.5pt,
+    node distance=9mm and 15mm,
+    every node/.style={font=\small},
+  },
+    box/.style={
+    draw=ink, line width=0.5pt, rounded corners=1.5pt,
+    inner xsep=6pt, inner ysep=4pt, align=center,
+  },
+    boxhi/.style={box, draw=accent, fill=accentsoft, text=ink},
+    boxdim/.style={box, draw=hairline, text=muted},
+    flow/.style={->, draw=ink},
+  flowdim/.style={->, draw=hairline},
+  lbl/.style={font=\footnotesize\itshape, text=accent, inner sep=2pt},
+  lbldim/.style={font=\footnotesize, text=muted, inner sep=2pt},
+    group/.style={draw=hairline, dashed, rounded corners=2pt, inner sep=7pt},
+}

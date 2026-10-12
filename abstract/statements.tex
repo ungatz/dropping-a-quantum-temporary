@@ -1,0 +1,48 @@
+\newcommand{\exRunning}{
+\begin{example}[the running examples]\label{ex:three}
+\leavevmode
+\begin{center}\small
+\begin{tabular}{@{}lll@{}}
+\toprule
+(a) \emph{superpose, then drop} & (b) \emph{superpose, then read} & (c) \emph{copy, measure, one joint gate} \\
+\midrule
+\texttt{prog a (v : [2]) : [2] \{} & \texttt{prog b (v : [2]) : [2] \{} & \texttt{prog c (v : [2]) : [2] \{} \\
+\texttt{\ \ new t : [2] @ |0>;}    & \texttt{\ \ new t : [2] @ |0>;}    & \texttt{\ \ new t : [2] @ |0>;} \\
+\texttt{\ \ H t;}                  & \texttt{\ \ H t;}                  & \textcolor{accentplum}{\texttt{\ \ H v;\ \ CX v t;}} \\
+                                   & \textcolor{accentplum}{\texttt{\ \ CX t v;}} & \textcolor{accentplum}{\texttt{\ \ p = lift[\{0\}] t;}} \\
+                                   &                                    & \textcolor{accentplum}{\texttt{\ \ V t v;}} \\
+\texttt{\ \ drop t;}               & \texttt{\ \ drop t;}               & \texttt{\ \ drop t;} \\
+\texttt{\ \ return v \}}           & \texttt{\ \ return v \}}           & \texttt{\ \ return v \}} \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{example}}
+
+\newcommand{\Hv}{\Hilb_{v}}
+\newcommand{\Hrest}{\Hilb_{\mathsf{rest}}}
+\newcommand{\pfx}[2]{#1|_{#2}}
+
+\newcommand{\stmtRecordWitness}{
+\begin{theorem}[the criterion, one record at a time]\label{thm:perrecord}
+Let $M$ be well typed with input context $\Omega$, and let $s$ drop a block of temporaries allocated in state $\psi$.
+On a measurement record $o$ whose path includes $s$, the following four statements are equivalent.
+\begin{enumerate}
+\item $s$ is safe on $o$.
+\item
+  \begin{minipage}[t]{.59\linewidth}
+  \raggedright
+  There are a unit vector $g\in\Hv$ and a linear contraction
+  $W_o:\den\Omega\to\Hrest$ such that:
+  \end{minipage}\hfill
+  \begin{minipage}[t]{.38\linewidth}
+  $\forall x,\quad\begin{gathered}[t]
+  \sigma_s^o x=g\otimes W_o x,\\
+  \lVert W_o x\rVert\le\lVert x\rVert.
+  \end{gathered}$
+  \end{minipage}\par\medskip
+\item
+  Some witness built as above has kept-record map $\sigma_s^o$, after omitting the fixed $\ket0_a$ factor.
+\item There is a witness as in (3) whose kept-record map, after omitting the fixed $\ket0_a$ factor,
+  agrees with $\pfx{M}{s}$ on $o$ in every closed context. Measurement-free contexts suffice.
+\end{enumerate}
+\end{theorem}}

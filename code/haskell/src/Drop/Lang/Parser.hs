@@ -112,7 +112,7 @@ lineAt []           = 1
 
 -- | The name of the construct an @if@ branch binds, at any depth.
 --
--- The language types both branches of a conditional in the same register
+-- The calculus types both branches of a conditional in the same register
 -- context, so a branch binds nothing: no allocation, no lift, no drop, and
 -- so no block either. The surface language says the same, and says it here,
 -- because every analysis downstream reads the binders off the top-level
@@ -576,9 +576,9 @@ pStmt env sc ts0@((_, TWord w) : rest) = case w of
   "loan"    -> errAt ts0 "a loan is declared in the program header, as \
                          \`prog f (..., loan a : [d]) : A { ... }`, not as a \
                          \statement"
-  "newdirty" -> errAt ts0 "'newdirty' is not a statement: a loan is declared in the \
+  "newdirty" -> errAt ts0 "'newdirty' is gone: a loan is declared in the \
                           \program header, as `loan a : [d]`"
-  "vis"     -> errAt ts0 "'vis' is not a statement: the program header supplies the \
+  "vis"     -> errAt ts0 "'vis' is gone: the program header supplies the \
                          \input registers"
   "lift"    -> errAt ts0 "a lift binds its parameter: write `p = lift[S] x;`"
   "gate"    -> errAt ts0 "a gate statement names the gate: write `H t;`, and \
@@ -633,7 +633,7 @@ pBound env sc ln p ts = case ts of
       else if length block >= d
         then errLn ln ("the block of a lift must be a proper subset of the "
                        ++ show d ++ " levels of '" ++ x ++ "'")
-      -- One parameter per lift, as the language writes them. A second
+      -- One parameter per lift, as the calculus writes them. A second
       -- binding of the same name would be read one way by the machine,
       -- which takes the latest, and another by the static pass, which takes
       -- the first, and the two would disagree in silence.
@@ -738,11 +738,13 @@ pIf env sc ts = do
   let ln = lineAt ts
   (g, ts1) <- pGuard ts
   (_, ts2) <- expectSym '{' ts1
-  (thn, sc1, ts3) <- pBranch env sc ts2
+  (thn, _, ts3) <- pBranch env sc ts2
   (_, ts4) <- expectSym '}' ts3
   (_, ts5) <- expectWord "else" ts4
   (_, ts6) <- expectSym '{' ts5
-  (els, _, ts7) <- pBranch env sc1 ts6
+  -- Each arm is read in the scope before the if: the then arm's exit scope
+  -- would make a drop in both arms read as a drop of a dropped register.
+  (els, _, ts7) <- pBranch env sc ts6
   (_, ts8) <- expectSym '}' ts7
   let ts9 = case ts8 of ((_, TSym ';') : r) -> r; _ -> ts8
   case [ p | p <- guardParams g, p `notElem` scBits sc ] of
@@ -976,9 +978,11 @@ renderCmdWith :: GateEnv -> Cmd Cyclo -> String
 renderCmdWith env c = case c of
   New x d        -> "new " ++ x ++ " : [" ++ show d ++ "] @ |0>;"
   NewState x d s -> "new " ++ x ++ " : [" ++ show d ++ "] @ " ++ st ++ ";"
+    -- A ket |i> is read back with d amplitudes, so a vector of any other
+    -- length is printed in full rather than as the ket it would become.
     where st = case basisKet s of
-                 Just i  -> "|" ++ show i ++ ">"
-                 Nothing -> "(" ++ intercalate ", " (map renderScalar s) ++ ")"
+                 Just i | length s == d -> "|" ++ show i ++ ">"
+                 _                      -> "(" ++ intercalate ", " (map renderScalar s) ++ ")"
   -- A loan is a header parameter; 'renderFile' prints it there. A bare
   -- render (used only for diagnostics) shows it as the header would.
   Loan x d       -> "-- loan " ++ x ++ " : [" ++ show d ++ "]"
@@ -1048,7 +1052,7 @@ liveAfter vis = foldl step vis
       Drop xs        -> filter ((`notElem` xs) . fst) live
       _              -> live
 
--- | The flat program as a file named @p@, returning
+-- | Legacy renderer: the flat program as a file named @p@, returning
 -- whatever is still live. @parseProgram . renderProgram@ is the identity on
 -- the abstract syntax.
 renderProgram :: VisSpec -> Prog Cyclo -> String
