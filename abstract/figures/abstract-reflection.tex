@@ -5,7 +5,7 @@
 
 \begin{document}
 \begin{tikzpicture}[house, semithick, font=\small]
-    \begin{scope}[shift={(1.5,3.3)}, scale=0.653]
+  \begin{scope}[shift={(1.5,3.3)}, scale=0.653]
     \def\rr{1.3}
     \draw[hairline] (0,0) circle (\rr);
     \draw[->, accent] (0,0) -- (\rr,0);
@@ -17,7 +17,7 @@
     \node[anchor=west, inner sep=2pt] at (1.12*\rr,0.45*\rr) {$w$};
     \node[font=\footnotesize, text=muted, rotate=30, anchor=north east, inner sep=2pt] at (210:1.25*\rr) {mirror};
   \end{scope}
-    \node at (4.05,3.3) {$R^{\psi}=I-2\dfrac{ww^\dagger}{\|w\|^2}$};
-  \node[font=\footnotesize, text=muted] at (4.05,2.3) {$R^{\psi}=I$ if $w=0$.};
+  \node at (4.05,3.3) {$T=I-2\dfrac{ww^\dagger}{\|w\|^2}$};
+  \node[font=\footnotesize, text=muted] at (4.05,2.3) {$T=I$ if $w=0$.};
 \end{tikzpicture}
 \end{document}

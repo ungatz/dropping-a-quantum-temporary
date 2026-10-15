@@ -9,11 +9,11 @@
  repair/.style={gate,draw=returnink,fill=returnsoft}]
 \node[font=\footnotesize,text=muted] at (1.15,.7) {source};
 \node[font=\footnotesize,text=returnink] at (4.2,.7) {inserted before drop};
-\foreach \y/\initial/\middle/\last/\op in {.25/{l:\ell}/{X\ell}/{\ell}/X,-.50/{t:|0\rangle}/{|+\rangle}/{|0\rangle}/H}{
- \node[anchor=east,text=loanink,inner sep=2pt] at (0,\y) {$\initial$};
- \draw[loanink] (0.05,\y)--(5.35,\y);
+\foreach \y/\initial/\middle/\last/\op/\wirecolour in {.25/{l:\ell}/{X\ell}/{\ell}/X/loanink,-.50/{t:|0\rangle}/{|+\rangle}/{|0\rangle}/H/ink}{
+ \node[anchor=east,text=\wirecolour,inner sep=2pt] at (0,\y) {$\initial$};
+ \draw[\wirecolour] (0.05,\y)--(5.35,\y);
  \node[gate] at (1.15,\y) {$\op$};
- \node[fill=white,text=loanink,inner sep=2pt] at (2.7,\y) {$\middle$};
+ \node[fill=white,text=\wirecolour,inner sep=2pt] at (2.7,\y) {$\middle$};
  \node[repair] at (4.2,\y) {$\op$};
  \node[anchor=west,text=returnink,inner sep=2pt] at (5.4,\y) {$\last$};
 }

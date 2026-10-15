@@ -16,8 +16,10 @@
 \draw[ink] ($(U.east)+(0,0.27)$) -- ++(0.40,0) coordinate (g1);
 \pic at (g1) {gnd};
 \draw[ink] ($(U.east)+(0,-0.27)$) -- ++(0.85,0);
-\node[lbldim] at (-0.72,0.46) {$t$};                                                                                 \node[lbldim] at (0,-0.85) {program $M$};
+\node[lbldim] at (-0.72,0.46) {$t$};   %
+\node[lbldim] at (0,-0.85) {program $M$};
 \node at (1.60,0) {$=$};
+\node[font=\scriptsize, text=muted] at (1.60,0.48) {if safe};
 \begin{scope}[xshift=2.45cm]
   \coordinate (a2) at (0,0.27);
   \fill[accent] (a2) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
