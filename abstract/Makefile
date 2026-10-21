@@ -1,5 +1,5 @@
 LATEXMK ?= latexmk
-FIGURES := abstract-loan abstract-matrices abstract-records abstract-reflection criterion
+FIGURES := abstract-loan abstract-matrices abstract-records abstract-reflection abstract-summed criterion
 FIGURE_PDFS := $(addprefix figures/,$(addsuffix .pdf,$(FIGURES)))
 
 .PHONY: abstract figures clean

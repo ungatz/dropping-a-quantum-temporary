@@ -16,9 +16,9 @@
 \draw[ink] ($(U.east)+(0,0.27)$) -- ++(0.40,0) coordinate (g1);
 \pic at (g1) {gnd};
 \draw[ink] ($(U.east)+(0,-0.27)$) -- ++(0.85,0);
-\node[lbldim] at (-0.72,0.46) {$t$};   %
-\node[lbldim] at (0,-0.85) {program $M$};
-\node at (1.60,0) {$=$};
+\node[lbldim] at (-0.72,0.46) {$t$};
+\node[lbldim] at (0,-0.85) {program $p$};
+\node at (1.60,0) {$\simeq$};
 \node[font=\scriptsize, text=muted] at (1.60,0.48) {if safe};
 \begin{scope}[xshift=2.45cm]
   \coordinate (a2) at (0,0.27);
@@ -31,7 +31,7 @@
   \draw[ink] (W.east) -- ++(0.5,0);
   \node[lbldim] at (0.35,-0.85) {safe};
 \end{scope}
-\node at (4.15,0) {$=$};
+\node at (4.15,0) {$\simeq$};
 \begin{scope}[xshift=5.25cm]
   \coordinate (a3) at (0,0.27);
   \fill[ink] (a3) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
@@ -43,7 +43,7 @@
   \node[sm] (W3) at (0.55,-0.27) {$U$};
   \draw[ink] (W3.west) -- ++(-0.5,0) node[left, font=\footnotesize, inner sep=1.5pt] {$v$};
   \draw[ink] (W3.east) -- ++(0.5,0);
-  \node[lbldim] at (0.45,-0.85) {witness};
+  \node[lbldim] at (0.45,-0.85) {$\mathcal S(R,U)$};
 \end{scope}
 \end{tikzpicture}
 \end{document}
