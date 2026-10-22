@@ -1,0 +1,114 @@
+% Draft abstract and introduction for abstract.tex (PLanQC 2027).
+% To use: replace the abstract environment of abstract.tex with the one below, and
+% replace Section 1 ("The problem", from \section{The problem} up to
+% \section{Separating ...}) with the section below. It uses the macros and labels
+% already defined in preamble.tex, statements.tex and the later sections.
+
+\begin{abstract}
+  Quantum programming languages let a program discard a temporary register under sufficient conditions: a
+  syntactic restriction on how the temporary was produced, a required final state, or the programmer's promise.
+  We give the exact semantic condition behind these rules. A drop is \emph{safe} when the program prefix that
+  ends at it, with every register exposed, is observationally equivalent to a program that prepares the
+  temporary in a fixed state, independently of the input, and leaves it idle: up to observational equivalence,
+  the drop is a weakening. We analyze this definition into a decidable criterion. Without measurement,
+  observational equivalence of programs that return every register is equality of denotations up to a global
+  phase, and the programs that prepare the temporary independently denote exactly the maps $g\otimes W$, with $g$
+  a unit vector on the temporary and $W$ an isometry on the other registers. A drop is therefore safe exactly
+  when the prefix's denotation $K$ factors as $g\otimes W$, that is, when the slices $K_i=(\bra i\otimes I)K$
+  along the temporary's computational basis, the Kraus operators of the channel the drop induces on the other
+  registers, are pairwise proportional. With measurement, definition and criterion apply to the unnormalized map
+  of each measurement record, so the verdict can depend on the outcome. The criterion extends to borrowed
+  registers, and deciding it is coNP-complete for programs over $X$, CNOT and Toffoli, so no sound
+  polynomial-time rule is complete for them unless $\mathrm P=\mathrm{NP}$. We implement it in a checker and a compiler to
+  OpenQASM~3.
+\end{abstract}
+
+\section{Introduction}\label{sec:intro}\label{sec:problem}
+
+Quantum programming languages let a program discard a temporary register when its scope ends, and each guards
+the discard with its own rule. Silq and Unqomp uncompute temporaries whose producers are
+\code{qfree}~\cite{Bichsel2020Silq,Paradis2021Unqomp}; Q\#, Quipper, Qutes and ReQWIRE require the temporary to
+end in a designated state, on the programmer's word or by
+analysis~\cite{Svore2018Qsharp,MicrosoftQsharpMemory,Green2013Quipper,Faro2026Qutes,Rand2019ReQWIRE}, and
+fractional types require the same of reversible programs~\cite{Chen2020Fractional}. Each rule is a sufficient
+condition for a single semantic property: the program behaves as if the temporary had been prepared on its own
+and left idle. We define this property by observational equivalence and analyze the definition into an exact
+criterion that a compiler can check. Exactness has a price: deciding the criterion is coNP-complete for programs
+over $X$, CNOT and Toffoli, so every sound polynomial-time rule rejects some safe drops unless
+$\mathrm P=\mathrm{NP}$.
+
+We write $\Omega\vdash M:A$ for a program with input registers $\Omega$ and output type $A$. Without measurement
+it denotes an isometry $\den M:\den\Omega\to\Hilb_{\mathsf{hid}}\otimes\den A$, where $\Hilb_{\mathsf{hid}}$ holds
+the registers $M$ has dropped: \drop{} ends a register's scope and leaves the state unchanged. A closed context
+$C$ supplies the inputs of a program and may compute further on its outputs; the observable result of a closed
+program is the probability of each measurement record and of each standard-basis outcome of its output. Two
+programs of the same type are \emph{observationally equivalent}, $M\cong M'$, when $C[M]$ and $C[M']$ have the same
+observable result for every closed context $C$. Now fix a drop site $s$ in $M$ whose block $v$ is a tuple of
+temporaries allocated in the state $\psi$, and let $P_1=\pfx{M}{s}$ be the prefix of $M$ before $s$ with every
+\drop{} deleted, so that $P_1$ returns every register; a context observes a register's correlations only while
+the register is in scope. The drop is \emph{safe} when $P_1\cong P_2$ for some \emph{witness}
+\[
+  P_2\;=\;\mathtt{new}\ v\ \mathtt{@}\ \psi\mathtt{;}\ \ R\ v\mathtt{;}\ \ Q,
+\]
+with $R$ a unitary on the block and $Q$ a program that acts only on the other registers. In $P_2$ the block
+is prepared on its own and left idle, so dropping it is a weakening: safety says that the drop is a weakening up
+to observational equivalence. Without measurement, programs that return every register are observationally
+equivalent exactly when their denotations agree up to a global phase, which $Q$ can absorb. Safety thus asks for
+\[
+  \den{P_1}\;=\;\den{P_2}.
+\]
+
+\Cref{ex:three} gives three well-typed programs. Each allocates $t$ in $\ket0$, computes, and drops $t$ while
+returning $v$; purple marks the lines that (b) and (c) add to (a).
+
+\begingroup
+\setlength{\topsep}{2pt}
+\exRunning
+\endgroup
+
+Program~(a) is safe: its prefix already has the shape of $P_2$, with $R=H$. In program~(b), the \code{CX}
+entangles $t$ with $v$ at input $\ket0_v$, whereas every $P_2$ returns $t$ in the product state $R\psi$, so its
+drop is unsafe. The temporary is dead after the drop in both programs; scope information alone cannot decide
+safety. Program~(c), treated in \cref{sec:results}, is safe on one measurement outcome and unsafe on the other.
+The definition is semantic: the prefix of Deutsch--Jozsa applies the oracle to its temporary, yet it is
+observationally equivalent to a $P_2$ that prepares the temporary in $\ket-$ and applies the phase oracle to the
+query register alone.
+
+The definition quantifies over all contexts and all witnesses $P_2$; analyzing it reduces safety to a property
+of one linear map. Let $K=\den{P_1}:\den\Omega\to\Hv\otimes\Hrest$, where $\Hrest$ holds every register outside
+the block, including those dropped earlier. Unfolding the witness gives $\den{P_2}x=R\psi\otimes\den Qx$, so
+safety asks for $K=g\otimes W$ with $g=R\psi$ and $W=\den Q$. Conversely, since our gates include every unitary,
+each unit vector $g$ is $R\psi$ for some $R$, and each isometry $W$ is $\den Q$ for some $Q$ that extends $W$ to
+a unitary. Expanding $K$ along the computational basis of the block, with slices $K_i=(\bra i\otimes I)K$, then
+gives
+\[
+  \text{the drop is safe}
+  \iff K=g\otimes W
+  \iff K_i=g_i\,W\ \text{for every } i
+  \iff \operatorname{rank}\Gamma\le1,
+\]
+where $\Gamma_{ij}=\operatorname{tr}(K_i^{\dagger}K_j)$ is the Gram matrix of the slices. The first equivalence
+is \cref{thm:measurementfree}; the others are linear algebra. The slices are the Kraus operators of the channel
+$\rho\mapsto\sum_iK_i\rho K_i^{\dagger}$ that the drop induces on the other registers, so a drop is safe exactly
+when this channel has Kraus rank one. The unit vector $g$, the \emph{certificate}, is the state in which the
+block ends at every input. Program~(a) has $K_0=K_1=I/\sqrt2$ and $g=\ket+$; program~(b) has $K_0=I/\sqrt2$ and
+$K_1=X/\sqrt2$, which are linearly independent. The criterion accepts (a), whose producer $H$ lies outside
+\code{qfree}, and the temporary of Deutsch--Jozsa, which ends in $\ket-$ for every oracle, whereas designated-state
+rules require $\ket0$.
+
+With measurement, a program denotes one unnormalized map per measurement record, and observational equivalence
+compares the probability of each record as well. Safety is defined record by record, against witnesses that may
+realize the remaining computation with one extra qubit and a measurement of which they keep one outcome. The
+same analysis shows that the drop is safe on a record $o$ exactly when the prefix's map on $o$ factors as
+$\sigma_s^o=g\otimes W_o$ with $W_o$ a contraction, where $\lVert W_ox\rVert^2$ is the probability of $o$ at a
+unit input $x$ (\cref{thm:perrecord}). Program~(c) is safe on exactly one of its
+two records. Coarser semantics cannot decide safety: two programs can share their output channel and record
+probabilities while receiving opposite verdicts on every record (\cref{sec:status}).
+
+For borrowed registers, which must return to the caller with their entanglement intact, the certificate
+generalizes to an isometry $B$ on the borrowed inputs, $K=B\otimes W$. A safe block is in a known state, so a
+compiler can reclaim it, and reusing reclaimed temporaries preserves every record, its probability and the
+reduced output state. We prove type safety and these results for a typed first-order language with
+finite-dimensional registers, measurement and classical conditionals, and implement the criterion in Haskell,
+with exact arithmetic for the verdicts and an OpenQASM~3 back end that emits reclaiming gates
+(\cref{sec:status}).
