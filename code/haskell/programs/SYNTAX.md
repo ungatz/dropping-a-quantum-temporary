@@ -1,9 +1,11 @@
 # The `.s` concrete syntax
 
-A program is a sequence of statements ending in `return`; the grammar below
-is the accepted `.s` file format. The parser is
+One page, from Figure 2 of the paper. The grammar **is** the file format: a
+program is a sequence of statements ending in `return`, and the paper prints
+no other form. Every program printed in the paper is in this spelling, and
+every file here is one of them or a variant of one. The parser is
 `src/Drop/Lang/Parser.hs`; `dqt typecheck FILE` parses and typechecks a file,
-and `dqt run FILE` reports its drop verdicts.
+`dqt run FILE` decides its drops.
 
 ## The grammar
 
@@ -31,8 +33,8 @@ programs     prog f (x1 : [d1], ..., xn : [dn]) : A { M }
 
 `*` associates to the right, so `[2] * [2] * [2]` is `[2] * ([2] * [2])`, and
 so do tuples. A guard is a bit constant `0` or `1`, a parameter a lift bound,
-or a negation, conjunction or disjunction of guards. The file format writes
-these connectives as `!`, `&&`, and `||`. `S` is a set of levels, `{0}`, `{0,1}`, `{7}`: a
+or a negation, conjunction or disjunction of guards; the paper writes the
+connectives `¬`, `∧`, `∨` and prints no compound guard. `S` is a set of levels, `{0}`, `{0,1}`, `{7}`: a
 non-empty proper subset of the register's levels. `psi` is a ket `|i>` or an
 exact amplitude vector `(a0, ..., a_{d-1})`, which must be a unit vector.
 
@@ -76,7 +78,8 @@ Gate, New, Drop) and two more for the two the measurement section adds (Lift,
 If). A statement is not a term of the language, and nothing types one alone.
 A program `prog f (x1:[d1], ..., xn:[dn]) : A { M }` is the judgement
 `x1:[d1], ..., xn:[dn] |- M : A`; an input marked `loan` is typed as any
-other. The typing rules are implemented in `src/Drop/Lang/Check.hs`.
+other. The rules are the language definition in the paper and `src/Drop/Lang/Check.hs`
+here.
 
 `Drop` carries no premise about safety: if it did, unsafe programs would not
 be *expressible*, and the rules that reject them could not be compared. That
@@ -87,7 +90,7 @@ record at a time.
 
 Two surface forms are expanded before typing, and one operator expands them.
 Write `M1 (+)_ybar M2` for "run M1, bind the value it returns to the tuple of
-names `ybar`, continue with M2", by recursion on M1 — one clause per
+names `ybar`, continue with M2", by recursion on M1: one clause per
 statement, and the same clause for all of them:
 
 ```
@@ -103,7 +106,7 @@ A block
 ybar = { ...; return v };
 ```
 
-is `M1 (+)_ybar M2`, and a non-tail `if` — one with statements after it — is
+is `M1 (+)_ybar M2`, and a non-tail `if` (one with statements after it) is
 `(if e {M1} else {M2}) (+)_ybar M`. The binder `ybar` is a tuple of names,
 because that is the only pattern that ever occurs: a binder of register type
 is a name and one of unit type is `()`. The last clause copies the
@@ -111,35 +114,27 @@ continuation into both branches, so the expanded term can be `2^k` times the
 size of the file under `k` nested blocks; no run, site or verdict changes.
 The parameters a block binds leave scope at its closing brace.
 
-`Drop.Lang.Typed.seqTerm` is the operator, three clauses and no more;
-`Drop.Lang.Typed.toTerm` discharges the one surface production that uses it.
+`Drop.Lang.Syntax.seqTerm` is the operator, three clauses and no more;
+`Drop.Lang.Syntax.toTerm` discharges the one surface production that uses it.
 
 ## `drop`, and the loan header marker
 
 The header is the input context: `x : [d]` is an ordinary input register, and
 `loan a : [d]` is a register the program is handed in a state it does not
 know and must hand back. A loan is typed and run as an input; the marker is
-used by the safety checker and the compiler, which prepares nothing for it — it
+read only by the site definition and the compiler, which prepares nothing for it: it
 is an input register of the emitted circuit. A loan is *dropped*, never
 returned, and exactly once on every execution path.
 
 A `drop` of a tuple is **one** site, not two. A tuple that holds a loan is
-checked by the loan criterion, whatever else the block holds: writing the
+decided by the site definition clause 4, whatever else the block holds: writing the
 input space as `[[Omega]] = H_loan (x) [[Omega']]` with `H_loan` the tensor
 product of the spaces of the loans **in the block**, the site is safe when
 the site map factors as `sigma_s = B (x) W` with `B : H_loan -> H_block` an
 isometry and `W : [[Omega']] -> H_rest` linear. `B` is the block factor, and
 it is *rectangular* when the block holds temporaries beside its loans. A
 block of temporaries only is the case `H_loan = C`, where `B` is the unit
-vector the temporaries are left on — the fixed-ray test.
-
-An input without the `loan` marker may also be dropped. If the block contains
-no loans, the checker tests for one fixed pure block state at every input,
-as it does for temporaries. Dropping an untouched input fails this test;
-moving its state into another register can make the drop safe. The compiler
-refuses a reachable safe drop that names an ordinary input, because that
-input has neither a declared allocation state nor a loan-return obligation.
-An unsafe drop leaves its wires live, as for any other unsafe drop.
+vector the temporaries are left on: the fixed-ray test.
 
 ## The file
 
@@ -152,17 +147,17 @@ A file holds optional top-level gate declarations and then exactly one
 program. Comments run from `--` to the end of the line. Whitespace is free;
 `;` terminates a statement; the body's last line is `return v`.
 
-An explicit-binding spelling of a statement — `t = new [d] @ psi;`,
-`p = U v;`, `() = drop v;` — is a parse error naming the printed form
+An explicit-binding spelling of a statement (`t = new [d] @ psi;`,
+`p = U v;`, `() = drop v;`) is a parse error naming the printed form
 instead: the accepted language is exactly the printed grammar above.
 
 ## The gate table
 
 `H`, `X`, `Z`, `S`, `T`, `CX`, `CCX`, `Swap`, `Diff` (Grover's `2|s><s| - I`),
 each with its standard matrix. `HC` is a second name for `H`. `tilt` and
-`READ3` are qutrit gates used by `rus.s`. The OpenQASM compiler supports
-power-of-two register dimensions and the gate forms listed by its implementation;
-three-level registers are outside its domain.
+`READ3` are the two qutrit gates `rus.s` needs; the paper's table of
+The paper's *Compilation to circuits* does not list them, and they are outside the emitter's domain
+along with every three-level register.
 
 A declared gate joins the table for that file:
 `gate V : [2] * [2] = mat { ... };` makes `V t q;` a gate statement.
@@ -179,7 +174,7 @@ A name is bound once, and a dropped name is never bound again. A gate's
 registers are distinct, known, and of the right total dimension. An
 allocation's state is a unit vector of the right length. A lift's block is a
 non-empty proper subset of the register's levels, and its parameter is fresh.
-An `if` branch binds nothing — no allocation, lift, drop or block — and its
+An `if` branch binds nothing (no allocation, lift, drop or block), and its
 guard reads only bit constants and parameters in scope. Every register is dropped or returned,
 and the value returned has the type the header declares.
 
@@ -199,7 +194,7 @@ dqt pass FILE          the static pass behind the runtime check, stage by stage
 
 | file | what it is | site, verdict |
 | --- | --- | --- |
-| `dj.s` | Deutsch–Jozsa, oracle `f(x) = x`; the listing of *Syntax* | `t`: safe, `(1,-1)` |
+| `dj.s` | Deutsch-Jozsa, oracle `f(x) = x`; the listing of *Syntax* | `t`: safe, `(1,-1)` |
 | `copy-input.s` | copies its input into a temporary and forgets the input; the listing of *Statics* | `x`: unsafe |
 | `c.s` | program (c) of the measurement section's two programs: copy, measure, one joint gate, drop | `t`: record 1 safe `(1,0)`, record 0 unsafe |
 | `teleport.s` | teleportation; the listing of the measurement section's two programs | `m`, `a`: safe on all four records |
@@ -211,7 +206,7 @@ dqt pass FILE          the static pass behind the runtime check, stage by stage
 | `simon.s` | Simon's problem on two bits | `w`: both records safe, on different levels |
 | `shor.s` | order finding, `N = 15`, base 7, lift against `{7}` | `w`: record 1 safe `|7>`, record 0 unsafe |
 | `superdense.s` | superdense coding of `(1,1)` | `a`: two records unreachable, two safe `(0,1)` |
-| `temp-and.s` | Gidney's measured AND | `a`: both records safe, on different levels |
+| `temp-and.s` | a temporary AND uncomputed by measurement | `a`: both records safe, on different levels |
 | `temp-general.s` | the Spooky Pebble Game's Figure 1 at `f = AND` | `a`: both records safe, `(1,0)` |
 | `rus.s` | one repeat-until-success iteration, a three-level block | `t`: record 1 unsafe, record 0 safe `(0,0,1)` |
 | `learns-nothing.s` | learns nothing about the input, and the drop is still unsafe | `t`: unsafe |
@@ -219,9 +214,9 @@ dqt pass FILE          the static pass behind the runtime check, stage by stage
 | `bell-pair.s` | which program a context compares: a Bell pair dropped as one tuple | `(a,b)`: safe, block dimension 4, `(1,0,0,1)` |
 | `bell-pair-split.s` | the same Bell pair, dropped register by register | `a`: unsafe; `b`: unsafe |
 
-Nineteen files. Four of them — `teleport.s`, `rus.s`, `temp-and.s` and
-`temp-general.s` — write a non-tail `if`, and so use the sequencing operator.
+Nineteen files. Four of them (`teleport.s`, `rus.s`, `temp-and.s` and
+`temp-general.s`) write a non-tail `if`, and so use the sequencing operator.
 `rus.s` is outside the compiler's domain by dimension; `bell-block.s` and
-`c.s` are outside it by gate; the other sixteen compile to OpenQASM 3. Three
-more files, `test/fixtures/cz-loan.s`, `test/fixtures/dirty-nonbasis.s` and
-`test/fixtures/dirty-nonbasis-unsafe.s`, exercise the compiler outside this corpus.
+`c.s` are outside it by gate; the other sixteen compile to OpenQASM 3. Two
+more files, `test/fixtures/cz-loan.s` and `test/fixtures/dirty-nonbasis.s`,
+exercise the compiler and are not part of the corpus.

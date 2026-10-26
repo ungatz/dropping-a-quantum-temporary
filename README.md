@@ -19,9 +19,9 @@ register alone, without changing the rest of the computation?
 (cd code/haskell && cabal run dqt -- run programs/mcx-dirty.s)
 ```
 
-The [Haskell README](code/haskell/README.md) describes the compiler's supported
-fragment and diagnostics. The [OpenQASM README](code/qasm3/README.md) gives the
-Python dependencies and circuit-comparison commands. Verdict calculations are
+The [Haskell README](code/haskell/README.md) lists the commands, in the shell
+and in the REPL. The [OpenQASM README](code/qasm3/README.md) gives the Python
+dependencies and the circuit checks. Verdict calculations are
 exact; emitted gate parameters and circuit comparisons use numerical arithmetic.
 
 MIT; see [`LICENSE`](LICENSE).

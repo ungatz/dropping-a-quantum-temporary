@@ -1,5 +1,5 @@
--- temp-general.s: the general measurement-based uncomputation of Kornerup,
--- Sadun and Soloveichik, "The Spooky Pebble Game", arXiv:2110.08973v1,
+-- temp-general.s: the general measurement-based uncomputation of
+-- "The Spooky Pebble Game", arXiv:2110.08973v1,
 -- Figure 1, instantiated at f(x,y) = x AND y.
 --
 -- Figure 1 in five boxes: H on the temporary; measure it, binding b; flip it

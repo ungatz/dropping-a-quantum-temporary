@@ -1,10 +1,17 @@
--- |
--- Module      : Drop.Theory.Lifted.Programs
+-- Drop.Theory.Lifted.Programs: the programs with lifts that the measurement section discusses.
 --
--- The lifted programs the paper discusses: the witness no static analysis
--- can serve, the same text with the read deleted, the qubit that splits
--- after a joint gate, and the pair of programs with one channel and two
--- verdicts. Values of the syntax in "Drop.Theory.Lifted".
+-- Question: Which programs with lifts show that the verdict of a drop depends on the measurement record?
+-- Answer:   liftedWitness tilts a trit, lifts the block {0,1}, reads under a conditional whose two arms are
+--           the same, and drops: its record In (weight 8/9) is unsafe and its record Out (weight 1/9) is
+--           safe. liftedWitnessNoRead deletes the read and is safe on both records.
+--           classicalCoreNaiveEncoding is the leaking classical program written with equal amplitudes,
+--           and is safe on both. qubitSplitAfterJointGate has a qubit temporary and a joint gate after the
+--           lift: safe on In, unsafe on Out, each of weight 1/2. sameChannelSafe and sameChannelUnsafe
+--           are two programs with one summed channel and equal weights, safe on both records and unsafe
+--           on both.
+-- Paper:    sec:boundary (why the record matters), sec:channel (what the summed channel forgets).
+-- Shapes:   LProgram   a label, the visible register and its dimension, and a lifted term (Drop.Theory.Lifted).
+
 module Drop.Theory.Lifted.Programs
   ( liftedWitness
   , liftedWitnessNoRead
@@ -19,7 +26,7 @@ import Drop.Theory.Algebra.Scalar
 import Drop.Theory.Program.Syntax
 import Drop.Theory.Lifted
 
--- | The witness no static analysis can serve: identical branches under a
+-- | The witness that no record-oblivious verdict serves: identical branches under a
 -- lift, so the conditional computes nothing.
 --
 -- > let t = new |0> in
@@ -28,8 +35,8 @@ import Drop.Theory.Lifted
 -- >   if p then (v := v + t) else (v := v + t);
 -- >   drop t; v
 --
--- @In@ (weight 8\/9): temporary correlated with @v@, drop refused.
--- @Out@ (weight 1\/9): temporary a basis state, drop accepted.
+-- @In@ (weight 8\/9): the temporary is correlated with @v@, drop refused.
+-- @Out@ (weight 1\/9): the temporary is a basis state, drop accepted.
 liftedWitness :: LProgram
 liftedWitness = LProgram
   { lLabel  = "the witness: tilt, lift {0,1}, read under a vacuous conditional, drop"
@@ -45,6 +52,12 @@ liftedWitness = LProgram
     readThenDrop t v =
       LAct ("t2","v2") (gRead 3) (t, v) (LDrop "t2" (LRet "v2"))
 
+-- Each program: its depth, and the weight and ruling of each record.
+-- >>> fmap (map (\v -> (tvTrace v, tvWeight v, admissible (tvVerdict v))) . verdictProfile) (checkLProgram liftedWitness)
+-- Right [([In],Just 8/9,False),([Out],Just 1/9,True)]
+-- >>> fmap ltDepth (checkLProgram liftedWitness)
+-- Right 1
+
 -- | The witness with the read deleted: tilt, lift, drop. Safe under both
 -- traces, since the impossibility begins at the read, not the measurement.
 liftedWitnessNoRead :: LProgram
@@ -58,6 +71,9 @@ liftedWitnessNoRead = LProgram
           LLift "p" "t1" [0,1] $
             LDrop "t1" (LRet "v1")
   }
+
+-- >>> fmap (map (\v -> (tvTrace v, tvWeight v, admissible (tvVerdict v))) . verdictProfile) (checkLProgram liftedWitnessNoRead)
+-- Right [([In],Just 8/9,True),([Out],Just 1/9,True)]
 
 -- | The classical witness transcribed naively: spread the trit, apply
 --
@@ -74,24 +90,26 @@ classicalCoreNaiveEncoding = LProgram
   , lVisDim = 2
   , lTerm   =
       LNew "t" 3 0 $
-        -- spread the trit uniformly: the classical "fair three-way coin"
+        -- spread the trit over all three levels (weights 4/9, 4/9, 1/9)
         LAct ("t1","v1") (onTmp "fair3" fair3 2) ("t","v") $
           LAct ("t2","v2") (joint "pi" 3 2 piMat) ("t1","v1") $
             LLift "p" "t2" [0,1] $
               LDrop "t2" (LRet "v2")
   }
   where
-    -- Any orthogonal matrix whose first column is (1,1,1)/sqrt3 works; the
-    -- entries below are exact in this field.
-    fair3 = mTilt   -- tilt|0> = (2,2,1)/3: three nonzero weights, all reachable
+    fair3 = mTilt   -- tilt|0> = (2,2,1)/3: three nonzero amplitudes, all reachable
     piMat = permMat 6 (\k -> let t = k `div` 2
                                  v = k `mod` 2
                              in if t <= 1 then ((t + v) `mod` 2) * 2 + v
                                           else 2 * 2 + v)
 
--- | A temporary qubit that is outcome-dependent, the reason the obstruction
--- does not appear at temporary dimension two: it needs a joint gate after
--- the lift, since a measurement alone leaves singleton blocks there.
+-- >>> fmap (map (\v -> (tvTrace v, tvWeight v, admissible (tvVerdict v))) . verdictProfile) (checkLProgram classicalCoreNaiveEncoding)
+-- Right [([In],Just 8/9,True),([Out],Just 1/9,True)]
+-- >>> fmap oracleSplit (checkLProgram classicalCoreNaiveEncoding)
+-- Right False
+
+-- | A temporary qubit whose verdict depends on the outcome. It needs a joint gate after
+-- the lift, since a measurement alone leaves singleton blocks in dimension two.
 --
 -- @H@ on @v@, @CX@ (v controls), @lift (meas t in {0})@, then the real
 -- orthogonal @V@,
@@ -100,11 +118,7 @@ classicalCoreNaiveEncoding = LProgram
 --
 -- then drop. Surviving block: basis state, drop safe. Other block: @V@
 -- sends @|11>@ to a Bell state, Kraus rank two, drop refused. Both traces
--- carry weight 1\/2, so this does not depend on restricting to reachable
--- traces.
---
--- Restricted statement: with no joint gate after the lift, a dimension-two
--- temporary cannot split; three is the first dimension that fails.
+-- carry weight 1\/2.
 qubitSplitAfterJointGate :: LProgram
 qubitSplitAfterJointGate = LProgram
   { lLabel  = "a scratch qubit, oracle-split by a joint gate after the lift"
@@ -130,6 +144,11 @@ qubitSplitAfterJointGate = LProgram
             , [z, nr2, z, r2]
             , [z, z,   o, z ] ]
 
+-- >>> fmap (map (\v -> (tvTrace v, tvWeight v, admissible (tvVerdict v))) . verdictProfile) (checkLProgram qubitSplitAfterJointGate)
+-- Right [([In],Just 1/2,True),([Out],Just 1/2,False)]
+-- >>> fmap oracleSplit (checkLProgram qubitSplitAfterJointGate)
+-- Right True
+
 -- | One half of the instrument-adequacy pair: two commands can denote the
 -- same channel, with the same branch weights, and opposite drop verdicts.
 --
@@ -149,10 +168,13 @@ sameChannelSafe = LProgram
               LDrop "t2" (LRet "v2")
   }
 
+-- >>> fmap (map (\v -> (tvTrace v, tvWeight v, admissible (tvVerdict v))) . verdictProfile) (checkLProgram sameChannelSafe)
+-- Right [([In],Just 1/2,True),([Out],Just 1/2,True)]
+
 -- | The other half: same spread, but the joint gate runs after the lift:
 -- @H@, lift @{0}@, @t := t (+) v@, drop.
 --
--- Each branch now has two non-proportional Kraus operators, rank two, both
+-- Each branch has two non-proportional Kraus operators, rank two, both
 -- refused. The branch maps still sum to the same dephasing channel at the
 -- same weights: same channel, opposite verdicts on every branch.
 sameChannelUnsafe :: LProgram
@@ -167,3 +189,8 @@ sameChannelUnsafe = LProgram
             LAct ("t2","v2") gCompute ("t1","v1") $
               LDrop "t2" (LRet "v2")
   }
+
+-- >>> fmap (map (\v -> (tvTrace v, tvWeight v, admissible (tvVerdict v))) . verdictProfile) (checkLProgram sameChannelUnsafe)
+-- Right [([In],Just 1/2,False),([Out],Just 1/2,False)]
+-- >>> fmap (map (tvWeights) . verdictProfile) (checkLProgram sameChannelUnsafe)
+-- Right [[1/2,1/2],[1/2,1/2]]

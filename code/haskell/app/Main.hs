@@ -1,4 +1,46 @@
--- | Command line for the theory and typed-language tools.
+-- Main: the command line, dqt.
+--
+-- Question: What can a person ask the artifact from a shell, and which module answers it?
+-- Answer:   dqt reads its arguments and hands each command to the module that owns it. The
+--           theory-layer commands call Drop.Theory and Drop.Bridge (the reports list, multi,
+--           lifted, residual, classical and all are formatted here); the language-layer commands
+--           call Drop.Lang.Report.Run, Trace and Explain, and Drop.Lang.Suite. The commands, as
+--           the dispatch table in main has them:
+--             list                       every program of the catalogue, with its verdict
+--             show NAME                  the program, sugared and raw
+--             check NAME                 the verdict, both routes, and the evidence
+--             gram NAME                  the core map, its slices and the Gram matrix
+--             witness NAME               synthesise the shape sep(R,W) and verify it
+--             context NAME               what a client can see
+--             multi                      many temporaries: bundling, joint against per register
+--             nested                     nested allocation: does the witness survive?
+--             lifted                     dynamic lifting: the verdict profile
+--             residual                   the runtime check, as an emitted table
+--             classical                  the classical core, and the two-level converse
+--             all                        the catalogue, three programs in full, and the multi,
+--                                        lifted, residual and classical reports
+--             bridge                     the two checkers, and the two runtime checks
+--             run FILE                   run one surface program and report on its drops
+--             typecheck FILE             parse and typecheck one surface program
+--             compile FILE               compile one surface program to OpenQASM 3
+--             compile-reuse FILE         the same, reusing restored temporary wires
+--             allocation FILE            the wire assignments and restorations, as JSON
+--             trace FILE [--input NAME]  the run, frame by frame, one temporary at a time
+--             pass FILE                  the static pass behind the runtime check, stage by stage
+--             suite                      the language layer's checks, with their count
+--           With no command, or help, -h or --help, dqt prints its usage. An unknown command
+--           prints the usage to standard error and exits with failure, so `dqt typo && next`
+--           does not run next. Main prints, so IO is allowed here. The usage states the
+--           suite's size, counted from the corpus, which it reads once.
+-- Paper:    the full paper's claims table names dqt bridge for thm:criterion and thm:loancriterion, dqt
+--           multi for prop:composite, dqt run for thm:notext and sec:eval:corpus, and dqt list for
+--           the verdict of each catalogue program. The other commands serve the reader of the
+--           artifact and name no section.
+-- Shapes:   usage       the help text, given the corpus (it states the suite's size).
+--           main        the dispatch on the arguments.
+--           cmdList, cmdMulti, cmdLifted, cmdResidual, cmdClassical, cmdAll
+--                       the text of the theory-layer reports.
+
 module Main (main) where
 
 import System.Environment (getArgs)
@@ -24,11 +66,12 @@ import Drop.Theory.Criterion.Witness
 
 import qualified Drop.Lang.Report.Run as SRun
 import qualified Drop.Lang.Suite as SSuite
+import Drop.Lang.Checks.Parser (Corpus, readCorpus)
 import qualified Drop.Lang.Report.Trace as STrace
 import qualified Drop.Lang.Report.Explain as SExplain
 
-usage :: String
-usage = unlines
+usage :: Corpus -> String
+usage corpus = unlines
   [ "dqt -- the drop criterion and its checker"
   , ""
   , "  dqt list                 every program in the catalogue, with its verdict"
@@ -44,17 +87,19 @@ usage = unlines
   , "  dqt classical            the classical core, and the two-level converse"
   , "  dqt all                  all reports and examples"
   , ""
-  , "the two engines, and the language layer"
+  , "the two checkers, and the language layer"
   , ""
-  , "  dqt bridge               the two engines, and the two runtime checks"
+  , "  dqt bridge               the two checkers, and the two runtime checks"
   , "  dqt run <file.s>         run one surface program and report on its drops"
   , "  dqt typecheck <file.s>   parse and typecheck one surface program"
   , "  dqt compile <file.s>     compile one surface program to OpenQASM 3"
+  , "  dqt compile-reuse <file.s>  reuse restored temporary wires"
+  , "  dqt allocation <file.s>  report wire assignments and restoration as JSON"
   , "  dqt trace <file.s> [--input NAME]"
   , "                            the run, frame by frame, one temporary at a time"
   , "  dqt pass <file.s>        the static pass behind the runtime check, stage by stage"
   , "  dqt suite                the language layer: "
-      ++ show SSuite.suiteCheckCount ++ " checks over "
+      ++ show (SSuite.suiteCheckCount corpus) ++ " checks over "
       ++ show (length SSuite.suiteAlgorithms) ++ " algorithms"
   ]
 
@@ -81,21 +126,28 @@ main = do
     ["run", f]            -> SRun.runFile f
     ["typecheck", f]      -> SRun.typecheckFile f
     ["compile",   f]      -> SRun.compileFile f
+    ["compile-reuse", f]   -> SRun.compileReuseFile f
+    ["allocation", f]      -> SRun.allocationFile f
     ["trace", f]          -> STrace.traceFile f Nothing
     ["trace", f, "--input", inp] -> STrace.traceFile f (Just inp)
     ["pass", f]           -> SExplain.passFile f
     ["suite"]             -> SSuite.suiteMain
-    []                    -> putStr usage
-    ("-h" : _)            -> putStr usage
-    ("--help" : _)        -> putStr usage
-    ("help" : _)          -> putStr usage
+    []                    -> printUsage
+    ("-h" : _)            -> printUsage
+    ("--help" : _)        -> printUsage
+    ("help" : _)          -> printUsage
     -- An unrecognised subcommand must not exit 0: in a shell, `dqt typo &&
     -- next` would otherwise run `next`. Usage goes to standard error here
     -- for the same reason: it is a diagnostic, not output.
     (c : _)               -> do
       hPutStrLn stderr ("dqt: no such subcommand: " ++ c)
-      hPutStr stderr usage
+      readCorpus >>= hPutStr stderr . usage
       exitFailure
+
+-- | The usage text states how many checks the suite runs, which it counts from
+-- the corpus.
+printUsage :: IO ()
+printUsage = readCorpus >>= putStr . usage
 
 withProgram :: String -> (Program -> IO ()) -> IO ()
 withProgram n k = case byName n of
@@ -118,7 +170,7 @@ cmdList = table ["name", "shape?", "verdict", "witness"]
     yn b = if b then "yes" else "no"
     verdictWord tp = case verdict tp of
       Safe _     -> "SAFE"
-      Vacuous    -> "vacuous"
+      Unreachable -> "unreachable"
       Unsafe _ r -> "UNSAFE (rank " ++ show r ++ ")"
     witnessWord tp = case synthesize tp of
       Right w -> if wDegenerate w then "sep(1,W)" else "sep(R,W)"
@@ -132,7 +184,7 @@ admittedCount = length [ () | (_, p) <- catalogue, admitted p ]
   where admitted p = case checkProgram p of
           Right tp -> case verdict tp of
             Safe _  -> True
-            Vacuous -> True
+            Unreachable -> True
             _       -> False
           Left _   -> False
 inShapeCount  = length [ () | (_, p) <- catalogue, inSepShape p ]
@@ -174,7 +226,7 @@ cmdLifted = unlines (concatMap one
         ++ kvs
            [ ("the same verdict at every trace", yesNo (constantProfile tp))
            , ("oracle-split", yesNo (oracleSplit tp))
-           , ("so no static rule can accept it",
+           , ("mixed safety requires record-sensitive approval",
                yesNo (everySoundStaticDisciplineRejects tp)) ]
     traceRow tv = case lines (show (tvVerdict tv)) of
       []       -> []

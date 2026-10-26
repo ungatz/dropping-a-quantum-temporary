@@ -1,34 +1,31 @@
-# OpenQASM circuit comparison
+# qasm3
 
-This folder contains a numerical simulator for the OpenQASM 3 circuits emitted
-by the Haskell compiler. It parses circuits with the reference `openqasm3`
-parser, evaluates gates and measurement branches, compares final amplitudes
-with the compiler suite's Haskell leaf data, and checks that output bits read
-the returned qubits. The comparison uses a tolerance of `1e-9`; it is not
-formal verification or hardware execution.
+Numerical checks of the OpenQASM 3 circuits the Haskell compiler emits, and the
+reuse benchmark. The verdicts are exact in `../haskell/`; everything here is
+numerical (tolerance 1e-9). Python 3.11 with `requirements.txt`.
 
-The probes vary the visible inputs; loans start in zero states. This does not
-test every incoming loan state or entanglement with a caller. The simulator
-also starts fresh qubits in zero states. OpenQASM declarations alone do not
-provide that initialization; a device must satisfy the compiler's stated
-[initial-state assumption](../haskell/README.md#compiler-assumptions-and-diagnostics).
-
-Use Python 3.11. Install the pinned dependencies with
-`python3.11 -m pip install -r requirements.txt`.
-
-From `../haskell/`, generate the circuits and leaf data:
-
-```sh
-cabal test dqt-compile-test
 ```
-
-Then, from this directory, compare them and run the parser-level negative
-tests:
-
-```sh
+pip install -r requirements.txt
+(cd ../haskell && cabal test)      # writes the circuits into out-typed/
 python3.11 compile_check.py
-python3.11 -m unittest test_compile_check.py
+DQT_BIN="$(cd ../haskell && cabal list-bin exe:dqt)"
+python3.11 reuse_check.py --dqt "$DQT_BIN" --programs ../haskell/programs
+python3.11 allocation_check.py --dqt "$DQT_BIN" --programs ../haskell/programs
+python3.11 emission_check.py --dqt "$DQT_BIN"
+python3.11 wellformed_check.py
+python3.11 -m unittest test_compile_check.py test_reuse_check.py
+sh census-reproduce.sh
 ```
 
-The compiler writes files into `out-typed/` next to this script. They are
-generated data and are not included in this source export.
+```
+compile_check.py     every circuit in out-typed/, on every measurement branch,
+                     against the machine's amplitude and the returned value
+reuse_check.py       eleven fresh/reuse pairs compared as channels (REUSE.md)
+allocation_check.py  pool admission, and a zero state at each released block
+emission_check.py    gate emission against independently specified maps
+wellformed_check.py  the checkers here refuse an ill-formed program by name
+s_bench.py           the verdict at every drop and what three reuse schedules
+                     cost, into s_bench_table.md
+census.py            the paper's counts (26, 11, 14 + 1) from that table
+engine.py            the language's machine, numerically
+```

@@ -1,4 +1,4 @@
--- temp-and.s: a temporary AND uncomputed by measurement, as in Gidney,
+-- temp-and.s: a temporary AND uncomputed by measurement, as in
 -- "Halving the cost of quantum addition", Quantum 2, 74 (2018).
 --
 -- Site: drop a (depth 1).  Expected: record 1 (block {1}): SAFE, on the

@@ -1,9 +1,22 @@
--- |
--- Module      : Drop.Theory.Many.Multi
+-- Drop.Theory.Many.Multi: a program with several temporaries, decided as one with a single temporary.
 --
--- How a theory about one temporary applies to programs with many.  'bundle'
--- reduces many temporaries to one of dimension @D = d_1 * ... * d_n@; the
--- joint verdict is strictly weaker than per-temporary ('bellPair').
+-- Question: How does a criterion for one temporary decide a program that allocates and drops several?
+-- Answer:   A surface program (MProgram) is a list of statements that allocate a temporary, apply a named
+--           matrix to named registers, or drop a temporary. scopeCheck refuses a program that breaks the
+--           affine discipline or the core's premises for a gate. bundle turns the rest into a core program
+--           with one temporary of dimension D = d_1 * ... * d_n, allocated at the mixed-radix index of the
+--           allocations, one gate for each gate (placed by applyGateAt), and one drop at the end;
+--           bundlePreservesDenotation compares its map with runMulti, which runs the surface program
+--           directly. jointSafe is the criterion on the bundle. wireSafe asks of one temporary whether the
+--           output factors across that temporary against all the rest, on the same ray at every input, and
+--           everyWireSafe asks it of every temporary. Every wire fixed makes the bundle safe, and bellPair
+--           is safe as a bundle with neither wire fixed.
+-- Paper:    sec:factor (a tuple drop is one site, and when the drops of several temporaries are separately safe),
+--           prop:composite (the composite temporary).
+-- Shapes:   MStmt         MNew, MApply or MDrop: one statement of the surface language.
+--           MProgram      a label, the visible register and its dimension, and the statements.
+--           BundleError   why a surface program has no bundle: one constructor for each rule broken.
+
 module Drop.Theory.Many.Multi
   ( -- * The surface language
     MStmt(..)
@@ -45,6 +58,10 @@ data MStmt
   | MApply String Mat [Name] -- ^ a gate, named, applied to the listed registers in order
   | MDrop Name
 
+-- The statements of the Bell pair of temporaries.
+-- >>> map (\s -> case s of { MNew {} -> "new"; MApply {} -> "apply"; MDrop {} -> "drop" }) (mStmts bellPair)
+-- ["new","new","apply","apply","drop","drop"]
+
 -- | A surface program: one visible register (of any dimension), a statement
 -- list, and the promise that every temporary it allocates it also drops.
 data MProgram = MProgram
@@ -54,10 +71,20 @@ data MProgram = MProgram
   , mStmts   :: [MStmt]
   }
 
+-- >>> (mLabel bellPair, mVis bellPair, mVisDim bellPair)
+-- ("Bell pair of temporaries, visible register untouched","v",2)
+
 -- | The temporaries a surface program allocates, with their dimensions and
 -- allocation indices, in allocation order.
 mTemporaries :: MProgram -> [(Name, Int, Int)]
 mTemporaries p = [ (t,d,i0) | MNew t d i0 <- mStmts p ]
+
+-- >>> mTemporaries bellPair
+-- [("a",2,0),("b",2,0)]
+-- >>> mTemporaries (MProgram "p" "v" 2 [MNew "a" 2 1, MNew "b" 3 2, MDrop "b", MDrop "a"])
+-- [("a",2,1),("b",3,2)]
+-- >>> mTemporaries (MProgram "p" "v" 2 [])
+-- []
 
 -- Running the surface language
 
@@ -65,8 +92,10 @@ mTemporaries p = [ (t,d,i0) | MNew t d i0 <- mStmts p ]
 -- vector, temporaries in allocation order then the visible register. Drops
 -- are the identity: they only remove a name.
 runMulti :: MProgram -> Vec -> Vec
-runMulti p v0 = either (error . ("runMulti: " ++) . show) (const (go (names0, dims0, psi0) (mStmts p)))
-                       (scopeCheck p)
+runMulti p v0 =
+  -- refusal: a program that fails scopeCheck has no run
+  either (error . ("runMulti: " ++) . show) (const (go (names0, dims0, psi0) (mStmts p)))
+         (scopeCheck p)
   where
     names0 = [mVis p]
     dims0  = [mVisDim p]
@@ -77,7 +106,8 @@ runMulti p v0 = either (error . ("runMulti: " ++) . show) (const (go (names0, di
       MDrop _     -> go st ss
       MApply _ g xs ->
         go (ns, ds, matVec (applyGateAt ds g (map pos xs)) psi) ss
-        where pos x = maybe (error ("Drop.Theory.Many.Multi: no register " ++ x)) id
+        where -- impossible: scopeCheck has accepted the program, so each gate names a live register
+              pos x = maybe (error ("Drop.Theory.Many.Multi: no register " ++ x)) id
                             (lookup x (zip ns [0 ..]))
     -- the visible register was allocated first; the composite temporary convention puts the
     -- temporaries first, so one permutation at the end
@@ -86,6 +116,13 @@ runMulti p v0 = either (error . ("runMulti: " ++) . show) (const (go (names0, di
           n   = length ds
           ord = [1 .. n-1] ++ [0]
       in matVec (reorder ds ord) psi
+
+-- The Bell pair, with the visible register in state 0: temporaries first, then the visible register.
+-- >>> :m + Drop.Theory.Algebra.Scalar
+-- >>> runMulti bellPair [kone, kzero]
+-- [sqrt2/2,0,0,0,0,0,sqrt2/2,0]
+-- >>> runMulti bellPair [kzero, kone]
+-- [0,sqrt2/2,0,0,0,0,0,sqrt2/2]
 
 -- Composition
 
@@ -117,6 +154,11 @@ data BundleError
     -- ^ a gate whose matrix is not unitary.
   deriving (Eq)
 
+-- >>> NotAllDropped ["a"] == NotAllDropped ["a"]
+-- True
+-- >>> DroppedTwice "a" == AllocatedTwice "a"
+-- False
+
 instance Show BundleError where
   show (NotAllDropped ts) =
     "these temporaries are never dropped, so the program does not have the "
@@ -144,6 +186,30 @@ instance Show BundleError where
     "the name " ++ show t ++ " is allocated again after being dropped; "
     ++ "bundling gives each allocation its own factor, so rename the second"
     ++ " one (alpha-conversion) and bundle again"
+
+-- >>> :m + Drop.Theory.Algebra.Scalar
+-- >>> putStrLn (either show (const "ok") (bundle (MProgram "p" "v" 2 [MNew "a" 2 0])))
+-- these temporaries are never dropped, so the program does not have the visible result type: ["a"]
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MDrop "a"])))
+-- dropped without being allocated: ["a"]
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MDrop "a", MApply "H" mH ["a"]])))
+-- gate H names the temporary "a", which has already been dropped, and a dropped name is untouchable
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MApply "H" mH ["a"], MNew "a" 2 0, MDrop "a"])))
+-- gate H names the temporary "a" before it is allocated
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MDrop "a", MDrop "a"])))
+-- the temporary "a" is dropped twice
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MNew "a" 2 0])))
+-- the name "a" is allocated twice without an intervening drop
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MDrop "a", MNew "a" 2 0])))
+-- the name "a" is allocated again after being dropped; bundling gives each allocation its own factor, so rename the second one (alpha-conversion) and bundle again
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 5])))
+-- new "a" has dimension 2 and allocation index 5; a register has at least one level and the index is one of them
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "CX" mCX ["a", "a"]])))
+-- gate CX names the register "a" twice
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "H" mCX ["a"]])))
+-- gate H on ["a"] is not a square matrix of side 2
+-- >>> putStrLn (either show (const "ok") (scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "X2" [[kone, kone], [kone, kone]] ["a"]])))
+-- gate X2 is not unitary
 
 -- | Check the statement list respects the affine discipline: a gate names a
 -- temporary only between its @new@ and @drop@, no name is allocated or
@@ -181,6 +247,14 @@ scopeCheck p = go [] [] (mStmts p)
           where
             n = product [ if x == mVis p then mVisDim p else maybe 0 id (lookup x live) | x <- xs ]
 
+-- The Bell pair keeps the discipline; a name used after its drop does not.
+-- >>> scopeCheck bellPair
+-- Right ()
+-- >>> scopeCheck (MProgram "p" "v" 2 [MNew "a" 2 0, MDrop "a", MApply "H" mH ["a"]])
+-- Left gate H names the temporary "a", which has already been dropped, and a dropped name is untouchable
+-- >>> scopeCheck (MProgram "p" "v" 2 [MApply "H" mH ["v"]])
+-- Right ()
+
 -- | The composition elaboration: many temporaries in, one temporary out.
 -- Composite dimension @D = product d_i@, allocated at the mixed-radix index
 -- of the individual allocations; a gate on any subset lifts to the joint
@@ -216,6 +290,14 @@ bundle p = do
           v' = "u"  ++ show (n+1)
       in Act (t', v') g (t, v) (chain (n+1) t' v' gs)
 
+-- Two qubits and a trit become one temporary of dimension 6, allocated at the mixed-radix index of their allocations.
+-- >>> fmap (\p -> case progTerm p of { New t d i0 _ -> (t, d, i0); _ -> ("", 0, 0) }) (bundle bellPair)
+-- Right ("T",4,0)
+-- >>> fmap (\p -> case progTerm p of { New t d i0 _ -> (t, d, i0); _ -> ("", 0, 0) }) (bundle (MProgram "p" "v" 2 [MNew "a" 2 1, MNew "b" 3 2, MDrop "a", MDrop "b"]))
+-- Right ("T",6,5)
+-- >>> fmap progLabel (bundle bellPair)
+-- Right "Bell pair of temporaries, visible register untouched  [bundled: 2 temporaries of dims [2,2] into tmp[4]]"
+
 -- | Lift a gate on named registers to a gate on @tmp[D] (x) vis[m]@: one
 -- call to 'applyGateAt' on dims @[d_1, ..., d_n, m]@, since the bundle order
 -- (temporaries first, then visible) already makes
@@ -232,6 +314,12 @@ liftGate visName tnames dims m (nm, g, xs) = do
           Just i  -> Right i
           Nothing -> Left (GateOnUnknownRegister nm x)
 
+-- A gate on one qubit becomes a gate on the bundle and the visible register.
+-- >>> fmap (matRows . gateMat) (liftGate "v" ["a", "b"] [2, 2] 2 ("H", mH, ["a"]))
+-- Right 8
+-- >>> either show (const "ok") (liftGate "v" ["a"] [2] 2 ("H", mH, ["z"]))
+-- "gate H names the register \"z\", which is not in scope"
+
 -- | Does composition preserve the meaning?  Compare the composite core program's map
 -- with the surface program's own semantics, on every visible basis input.
 bundlePreservesDenotation :: MProgram -> Bool
@@ -244,6 +332,11 @@ bundlePreservesDenotation p =
                       | j <- [0 .. m-1] ]
   where m = mVisDim p
 
+-- >>> bundlePreservesDenotation bellPair
+-- True
+-- >>> bundlePreservesDenotation (MProgram "p" "v" 2 [MNew "a" 2 0])
+-- False
+
 -- Joint versus per-temporary
 
 -- | The verdict the core can state: is the whole bundle left on one fixed ray?
@@ -251,8 +344,17 @@ jointSafe :: MProgram -> Either BundleError Bool
 jointSafe p = do
   b <- bundle p
   case checkProgram b of
+    -- impossible: bundle has already run scopeCheck, which states the premises the core checker needs
     Left e   -> error ("Drop.Theory.Many.Multi.jointSafe: bundled program ill-typed: " ++ show e)
     Right tp -> pure (safeByRank tp)
+
+-- The Bell pair is on a fixed ray as a bundle; a qubit that controls the visible register is not.
+-- >>> jointSafe bellPair
+-- Right True
+-- >>> jointSafe (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "H" mH ["a"], MApply "CX" mCX ["a", "v"], MDrop "a"])
+-- Right False
+-- >>> jointSafe (MProgram "p" "v" 2 [MNew "a" 2 0])
+-- Left these temporaries are never dropped, so the program does not have the visible result type: ["a"]
 
 -- | The verdict for one named temporary: does the denotation factor across
 -- the cut /this temporary/ against /everything else/, with the same factor
@@ -261,10 +363,12 @@ wireSafe :: MProgram -> Name -> Either BundleError Bool
 wireSafe p t = do
   b <- bundle p
   case checkProgram b of
+    -- impossible: bundle has already run scopeCheck, which states the premises the core checker needs
     Left e   -> error ("Drop.Theory.Many.Multi.wireSafe: " ++ show e)
     Right tp ->
       let tmps  = mTemporaries p
           dims  = [ d | (_,d,_) <- tmps ] ++ [mVisDim p]
+          -- refusal: t names no temporary of the program
           pos   = maybe (error "Drop.Theory.Many.Multi.wireSafe: no such wire") id
                         (lookup t (zip [ n | (n,_,_) <- tmps ] [0 ..]))
           m     = mVisDim p
@@ -282,10 +386,23 @@ wireSafe p t = do
     allSameLine []       = True
     allSameLine (x : xs) = all (lineEqual x) xs
 
+-- >>> map (wireSafe bellPair) ["a", "b"]
+-- [Right False,Right False]
+-- >>> wireSafe (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "H" mH ["a"], MApply "CX" mCX ["a", "v"], MDrop "a"]) "a"
+-- Right False
+-- >>> wireSafe (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "H" mH ["a"], MDrop "a"]) "a"
+-- Right True
+
 everyWireSafe :: MProgram -> Either BundleError Bool
 everyWireSafe p = do
   rs <- mapM (wireSafe p) [ t | (t,_,_) <- mTemporaries p ]
   pure (and rs)
+
+-- Joint safety is weaker: the Bell pair is safe as a bundle and neither wire is fixed.
+-- >>> everyWireSafe bellPair
+-- Right False
+-- >>> everyWireSafe (MProgram "p" "v" 2 [MNew "a" 2 0, MNew "b" 2 0, MApply "H" mH ["a"], MApply "H" mH ["b"], MDrop "a", MDrop "b"])
+-- Right True
 
 -- Examples
 
@@ -309,9 +426,13 @@ bellPair = MProgram
       , MDrop "b" ]
   }
 
--- | Three visible qubits, one temporary: @vis[8]@.  Deutsch--Jozsa-flavoured, to
--- show that the width of the visible register is not a parameter the theory
--- notices.
+-- >>> (mLabel bellPair, length (mStmts bellPair), mTemporaries bellPair)
+-- ("Bell pair of temporaries, visible register untouched",6,[("a",2,0),("b",2,0)])
+-- >>> (jointSafe bellPair, everyWireSafe bellPair)
+-- (Right True,Right False)
+
+-- | Three visible qubits and one temporary: @vis[8]@.  The visible register may have
+-- any dimension.
 wideVisible :: MProgram
 wideVisible = MProgram
   { mLabel  = "one temporary, three visible qubits (vis[8])"
@@ -326,12 +447,25 @@ wideVisible = MProgram
       , MDrop "t" ]
   }
 
+-- >>> (mLabel wideVisible, mVisDim wideVisible, mTemporaries wideVisible)
+-- ("one temporary, three visible qubits (vis[8])",8,[("t",2,0)])
+-- >>> (jointSafe wideVisible, everyWireSafe wideVisible)
+-- (Right True,Right True)
+
 -- | On @tmp[2] (x) vis[8]@: flip the low bit of the three-qubit visible
 -- register when the temporary is @|1>@.
 ctrlLowBit :: Mat
 ctrlLowBit = permMat 16 (\k -> let t = k `div` 8
                                    v = k `mod` 8
                                in t * 8 + (if t == 1 then v `div` 2 * 2 + (1 - v `mod` 2) else v))
+
+-- On the temporary and three visible qubits: a 16 x 16 permutation that flips the low visible bit when the temporary is 1.
+-- >>> (matRows ctrlLowBit, matIsUnitary ctrlLowBit)
+-- (16,True)
+-- >>> matVec ctrlLowBit (vbasis 16 8) == vbasis 16 9
+-- True
+-- >>> matVec ctrlLowBit (vbasis 16 3) == vbasis 16 3
+-- True
 
 -- | Three temporaries in nested scopes, of mixed dimensions, with gates that
 -- couple them.  Bundles to @tmp[12]@ and is decided by the ordinary criterion.
@@ -353,3 +487,8 @@ nestedThree = MProgram
       , MDrop "b"
       , MDrop "a" ]
   }
+
+-- >>> (mLabel nestedThree, mTemporaries nestedThree)
+-- ("three nested temporaries of dims 2, 2, 3",[("a",2,0),("b",2,0),("c",3,0)])
+-- >>> fmap (\p -> case progTerm p of { New t d i0 _ -> (t, d, i0); _ -> ("", 0, 0) }) (bundle nestedThree)
+-- Right ("T",12,0)

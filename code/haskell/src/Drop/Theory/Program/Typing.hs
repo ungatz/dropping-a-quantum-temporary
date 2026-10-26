@@ -1,9 +1,20 @@
--- |
--- Module      : Drop.Theory.Program.Typing
+-- Drop.Theory.Program.Typing: the typing rules of the calculus, as a decision procedure.
 --
--- The typing rules of the language section as a decision procedure, with every side
--- condition written out, including the exact context in @Var@ that forbids
--- hidden weakening.  Contexts are association lists in the tensor order.
+-- Question: Is a term well typed in a context, and at which type?
+-- Answer:   typeOf g e decides the judgement g |- e : A, one case for each form of term, with
+--           every side condition written out. A context is exact: a term must name every register
+--           of its context, so a register that is neither returned nor dropped is refused
+--           (LeftoverNames) and there is no implicit weakening. Drop is the only way to discard a
+--           temporary. checkGate tests a gate's matrix in this order: the declared dimensions,
+--           squareness, the width of every row, then unitarity. A program is typed when it is
+--           `let t = new i0 in e` and ends at its visible type (checkProgram). Contexts are
+--           association lists in the tensor order.
+-- Paper:    sec:lang:statics (the rules themselves are in app:core-rules).
+-- Shapes:   Ctx            a list of (name, register type) in tensor order.
+--           TypeError      one constructor for each way a term is refused.
+--           TypedProgram   a checked program with its temporary's name, dimension and allocation
+--                          index, the visible dimension, and the body of the outermost new.
+
 module Drop.Theory.Program.Typing
   ( -- * Contexts
     Ctx
@@ -27,14 +38,29 @@ import Drop.Theory.Program.Syntax
 -- in tensor order.
 type Ctx = [(Name, RegTy)]
 
+-- A context lists the registers in tensor order.
+-- >>> [("v", Vis 2), ("t", Tmp 3)] :: Ctx
+-- [("v",vis[2]),("t",tmp[3])]
+
 ctxLookup :: Name -> Ctx -> Maybe RegTy
 ctxLookup = lookup
+
+-- >>> ctxLookup "t" [("v", Vis 2), ("t", Tmp 3)]
+-- Just tmp[3]
+-- >>> ctxLookup "x" [("v", Vis 2), ("t", Tmp 3)]
+-- Nothing
 
 ctxNames :: Ctx -> [Name]
 ctxNames = map fst
 
+-- >>> ctxNames [("v", Vis 2), ("t", Tmp 3)]
+-- ["v","t"]
+
 ctxDims :: Ctx -> [Int]
 ctxDims = map (regDim . snd)
+
+-- >>> ctxDims [("v", Vis 2), ("t", Tmp 3)]
+-- [2,3]
 
 -- | The position of a name in the tensor order.
 ctxPos :: Name -> Ctx -> Maybe Int
@@ -44,16 +70,34 @@ ctxPos x g = go 0 g
     go i ((y,_):rest) | x == y    = Just i
                       | otherwise = go (i+1) rest
 
+-- >>> ctxPos "t" [("v", Vis 2), ("t", Tmp 3)]
+-- Just 1
+-- >>> ctxPos "x" [("v", Vis 2), ("t", Tmp 3)]
+-- Nothing
+
 ctxRemove :: Name -> Ctx -> Ctx
 ctxRemove x = filter ((/= x) . fst)
+
+-- >>> ctxRemove "v" [("v", Vis 2), ("t", Tmp 3)]
+-- [("t",tmp[3])]
+-- >>> ctxRemove "x" [("v", Vis 2)]
+-- [("v",vis[2])]
 
 -- | Rename in place, keeping the tensor position.
 ctxRename :: Name -> Name -> RegTy -> Ctx -> Ctx
 ctxRename old new q = map (\(y,r) -> if y == old then (new,q) else (y,r))
 
+-- Renaming keeps the position in the tensor order.
+-- >>> ctxRename "v" "w" (Vis 2) [("v", Vis 2), ("t", Tmp 3)]
+-- [("w",vis[2]),("t",tmp[3])]
+
 -- | Extend on the right; the fresh register is least significant.
 ctxExtend :: Name -> RegTy -> Ctx -> Ctx
 ctxExtend x q g = g ++ [(x,q)]
+
+-- A fresh register goes on the right, least significant.
+-- >>> ctxExtend "t" (Tmp 3) [("v", Vis 2)]
+-- [("v",vis[2]),("t",tmp[3])]
 
 -- Errors
 
@@ -88,6 +132,20 @@ data TypeError
   | ProgramMustAllocate
   | ProgramResultType Ty Ty
   deriving (Eq)
+
+-- Each refusal prints as the sentence that explains it.
+-- >>> UnboundName "x"
+-- unbound register name "x"
+-- >>> BadAllocIndex 2 2
+-- allocation index 2 is not in [0..1]
+-- >>> DuplicateName "t"
+-- the name "t" is already bound; displayed names must be fresh
+-- >>> NotATemporary "v" (Vis 2)
+-- "v" has type vis[2], not tmp[_]
+-- >>> ProgramMustAllocate
+-- a program must be `let t = new i0 in e`
+-- >>> LeftoverNames ["t"]
+-- the context still holds ["t"] when the term ends; the Var rule has an exact context, so there is no implicit weakening to discard them
 
 instance Show TypeError where
   show (LeftoverNames xs) =
@@ -128,6 +186,11 @@ instance Show TypeError where
     "a program must be `let t = new i0 in e`"
   show (ProgramResultType want got) =
     "a program must end at the visible type " ++ show want ++ ", not " ++ show got
+
+-- >>> show (UnboundName "x")
+-- "unbound register name \"x\""
+-- >>> show (ProgramMustAllocate)
+-- "a program must be `let t = new i0 in e`"
 
 -- The judgement
 
@@ -201,6 +264,29 @@ typeOf g (Drop t e) =
     Just q@(Vis _) -> Left (NotATemporary t q)
     Just (Tmp _)   -> typeOf (ctxRemove t g) e
 
+-- Var: a value must use the whole context; there is no implicit weakening.
+-- >>> :m + Drop.Theory.Corpus.Examples Drop.Theory.Program.Gates Drop.Theory.Algebra.Scalar
+-- >>> typeOf [("v", Vis 2)] (Ret "v")
+-- Right vis[2]
+-- >>> typeOf [("v", Vis 2), ("t", Tmp 2)] (Ret "v")
+-- Left the context still holds ["t"] when the term ends; the Var rule has an exact context, so there is no implicit weakening to discard them
+-- >>> typeOf [("v", Vis 2)] (Ret "w")
+-- Left unbound register name "w"
+-- >>> typeOf [("a", Vis 2), ("b", Tmp 3)] (Pair "a" "b")
+-- Right (vis[2] (x) tmp[3])
+-- >>> typeOf [("a", Vis 2)] (Pair "a" "a")
+-- Left the name "a" is already bound; displayed names must be fresh
+-- >>> typeOf [("v", Vis 2)] (New "t" 2 5 (Ret "v"))
+-- Left allocation index 5 is not in [0..1]
+-- >>> typeOf [("v", Vis 2)] (New "t" 2 0 (Ret "v"))
+-- Left the context still holds ["t"] when the term ends; the Var rule has an exact context, so there is no implicit weakening to discard them
+-- >>> typeOf [("v", Vis 2), ("t", Tmp 2)] (Drop "v" (Ret "t"))
+-- Left "v" has type vis[2], not tmp[_]
+-- >>> typeOf [("v", Vis 2)] (progTerm spreadAndPark)
+-- Right vis[2]
+-- >>> typeOf [("v", Vis 2)] (progTerm spreadAndRead)
+-- Right vis[2]
+
 -- | The @Gate@ rule's premises about the matrix, all three of them.
 checkGate :: Gate -> Int -> Int -> Either TypeError ()
 checkGate u d m
@@ -217,6 +303,18 @@ checkGate u d m
   | otherwise = Right ()
   where n = d * m
 
+-- The four premises, in order: dimensions, squareness, row widths, unitarity.
+-- >>> checkGate (gHt 2) 2 2
+-- Right ()
+-- >>> checkGate (gHt 2) 2 3
+-- Left gate H is declared on tmp[2] (x) vis[2] but is applied to tmp[2] (x) vis[3]
+-- >>> checkGate (joint "tall" 2 1 [[kone], [kone]]) 2 1
+-- Left gate tall has a 2x1 matrix, not square
+-- >>> checkGate (joint "ragged" 2 1 [[kone, kzero], [kzero]]) 2 1
+-- Left gate ragged claims to be 2x2 but its rows have widths [2,1]; a gate matrix is a list of lists here, so every row is checked
+-- >>> checkGate (joint "ones" 2 1 [[kone, kone], [kone, kone]]) 2 1
+-- Left gate ones is not unitary; the Gate rule's premise U^dagger U = U U^dagger = I fails exactly
+
 -- Programs
 
 -- | The result of checking a program: everything downstream needs the
@@ -230,6 +328,14 @@ data TypedProgram = TypedProgram
   , tpVisDim  :: Int     -- ^ @m@
   , tpBody    :: Term    -- ^ the body of the outermost @new@
   }
+
+-- A checked program keeps what typing found: the temporary's name, dimension and allocation index.
+-- >>> fmap tpTmpName (checkProgram spreadAndPark)
+-- Right "t"
+-- >>> fmap (\tp -> (tpTmpDim tp, tpAlloc tp, tpVisDim tp)) (checkProgram tiltThenRead)
+-- Right (3,0,3)
+-- >>> fmap (length . gatesIn . tpBody) (checkProgram spreadAndRead)
+-- Right 2
 
 -- | A program is typed when
 --
@@ -257,3 +363,15 @@ checkProgram p =
                                 , tpVisDim  = progVisDim p
                                 , tpBody    = body }
     _ -> Left ProgramMustAllocate
+
+-- A program is `let t = new i0 in e` ending at its visible type.
+-- >>> either show (const "typed") (checkProgram spreadAndPark)
+-- "typed"
+-- >>> either show (const "typed") (checkProgram (Program "p" "v" 2 (Ret "v")))
+-- "a program must be `let t = new i0 in e`"
+-- >>> either show (const "typed") (checkProgram (Program "p" "v" 0 (Ret "v")))
+-- "register \"v\" is declared with dimension 0; a register dimension must be at least 1"
+-- >>> either show (const "typed") (checkProgram (Program "p" "v" 2 (New "t" 2 0 (Pair "t" "v"))))
+-- "a program must end at the visible type vis[2], not (tmp[2] (x) vis[2])"
+-- >>> map (either show (const "typed") . checkProgram . snd) catalogue
+-- ["typed","typed","typed","typed","typed","typed","typed","typed","typed","typed","typed","typed","typed","typed","typed","typed","typed"]

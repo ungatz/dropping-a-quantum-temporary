@@ -1,6 +1,8 @@
 -- mcx-dirty.s: the 3-controlled X (C3X) from four Toffolis and one borrowed
--- register, after Barenco et al. The construction is also the first case study of Su, Zhou,
--- Feng and Ying, arXiv:2409.10153.
+-- register, after "Elementary Gates for Quantum Computation", Physical Review A 52
+-- (1995).  Token-identical to the mcx3 listing in the paper's four algorithms (sec:lang:algorithms).  The
+-- construction is also the first case study of "An Interpretation of Bunched Logic for
+-- Reasoning about Heap-Manipulating Quantum Programs", arXiv:2409.10153.
 --
 -- Site: drop a (depth 0).  Expected: SAFE, the loan handed back with B = I
 -- (exactly as it arrived, in whatever state that was).

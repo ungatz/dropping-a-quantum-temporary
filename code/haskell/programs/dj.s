@@ -1,6 +1,6 @@
 -- dj.s: Deutsch-Jozsa on one input qubit, |-> temporary, oracle f(x) = x as
 -- CX with control x and target t.  Token-identical to the listing in
--- the syntax examples.
+-- the paper's syntax section (sec:lang:syntax).
 --
 -- Site: drop t (depth 0).  Expected: SAFE, certificate the line (1,-1).
 

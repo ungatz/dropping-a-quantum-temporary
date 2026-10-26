@@ -1,9 +1,18 @@
--- |
--- Module      : Drop.Theory.Report
+-- Drop.Theory.Report: the reports the matrix checker prints.
 --
--- Rendering.  Nothing here computes anything; it formats what the other
--- modules decided, so every number the prose quotes is printed by the same
--- code that decides the verdicts.  Typography lives in "Drop.Theory.Pretty".
+-- Question: What does the matrix checker print for a program?
+-- Answer:   It formats what the other modules decide, in the layout of Drop.Theory.Pretty. The
+--           only arithmetic it does itself is the rank printed by reportContext.
+--           programHeader shows a program's source and what the checker knows of it before any
+--           matrix: its temporary and visible dimensions, whether it is literally of the shape
+--           sep(R, W), whether the denotation and the machine agree, whether the two routes
+--           to the criterion agree, and the verdict. reportGram adds the denotation, its Kraus
+--           operators, the Gram matrix and the three ranks. reportContext shows what every
+--           client of the standard family observes. reportWitness is the account of the
+--           witness. A program that does not type prints its type error in place of the report.
+-- Paper:    sec:criterion, sec:ctxequiv.
+-- Shapes:   Every report is a String or a list of lines; table lays out columns.
+
 module Drop.Theory.Report
   ( -- * Whole-program reports
     reportProgram
@@ -13,10 +22,8 @@ module Drop.Theory.Report
     -- * Pieces, for the assembled document
   , programHeader
   , typedGramReport
-  , verdictField
     -- * Tables
   , table
-  , matrixTable
   ) where
 
 import Drop.Theory.Criterion.Context
@@ -50,11 +57,13 @@ table hdr rows = unlines (line hdr : sep : map line rows)
     tailOf (_:xs) = xs
     tailOf []     = []
 
--- | A matrix rendered with row and column labels: the row label is the output
--- basis state, the column label the input.
-matrixTable :: String -> [String] -> [String] -> Mat -> String
-matrixTable title rowLbl colLbl m =
-  unlines (numTable title rowLbl colLbl (map (map showK) m))
+-- A header row, a rule under it, then the rows. Each line is quoted so its indentation shows.
+-- >>> :m + Drop.Theory.Corpus.Examples
+-- >>> mapM_ print (lines (table ["name", "verdict"] [["park", "SAFE"], ["example-B", "UNSAFE"]]))
+-- "  name      verdict"
+-- "  \9472\9472\9472\9472\9472\9472\9472\9472\9472 \9472\9472\9472\9472\9472\9472\9472"
+-- "  park      SAFE"
+-- "  example-B UNSAFE"
 
 -- Program reports
 
@@ -69,6 +78,18 @@ verdictField v = case lines (show v) of
                           | w <- wrapAt (measure - colonCol - 2)
                                         (dropWhile (== ' ') x) ]
                         | x <- ls ]
+
+-- The witness minor of an unsafe verdict is hung under the value, not left to start a line of its own.
+-- >>> :m + Drop.Theory.Program.Typing
+-- >>> mapM_ print (verdictField Unreachable)
+-- "  verdict                         : UNREACHABLE (the zero map: no state, so no"
+-- "                                    obligation)"
+-- >>> mapM_ print (either (const []) (verdictField . verdict) (checkProgram spreadAndRead))
+-- "  verdict                         : UNSAFE (slice rank 2, so the temporary"
+-- "                                    carries 1 dimension(s) of information"
+-- "                                    about the input)"
+-- "                                    witness minor at rows (0,1) columns (0,1):"
+-- "                                    1/2 /= 0"
 
 -- | The identifying block for one program: its source, then what the checker
 -- knows about it before any matrix is shown.
@@ -89,13 +110,48 @@ programHeader p = case checkProgram p of
                                                (routesAgree tp)) ]
     ++ verdictField (verdict tp)
 
+-- The source of spread-and-park, then what the checker knows of it.
+-- >>> mapM_ print (programHeader spreadAndPark)
+-- "    \9474 -- program (a): spread and park"
+-- "    \9474 let t = new |0> in"
+-- "    \9474   t1 := H t;  v1 := v"
+-- "    \9474   drop t1;"
+-- "    \9474   return v1"
+-- ""
+-- "  temporary                       : tmp[2], allocated in |0>"
+-- "  visible register                : vis[2]"
+-- "  literally of the shape sep(R,W)  : no"
+-- "  denotation against the machine  : agree"
+-- "  the two routes to the criterion  : agree"
+-- "  verdict                         : SAFE, parked on the line [1,1]"
+-- >>> mapM_ print (programHeader (Program "p" "v" 2 (Ret "v")))
+-- "    \9474 -- p"
+-- "    \9474   return v"
+-- ""
+-- "  TYPE ERROR                      : a program must be `let t = new i0 in e`"
+
 reportProgram :: Program -> String
 reportProgram = unlines . programHeader
+
+-- >>> mapM_ print (take 3 (lines (reportProgram spreadAndRead)))
+-- "    \9474 -- example (B) = program (b): spread and read"
+-- "    \9474 let t = new |0> in"
+-- "    \9474   t1 := H t;  v1 := v"
 
 reportGram :: Program -> String
 reportGram p = case checkProgram p of
   Left e   -> unlines (kv "TYPE ERROR" (show e))
   Right tp -> unlines (typedGramReport tp)
+
+-- >>> mapM_ print (take 6 (lines (reportGram spreadAndPark)))
+-- ""
+-- "    core map  K : H_2  \8594  H_2 (x) H_2"
+-- ""
+-- "                  0       1"
+-- "      (0,0)  sqrt2/2       0"
+-- "      (0,1)        0 sqrt2/2"
+-- >>> mapM_ print (lines (reportGram (Program "p" "v" 2 (Ret "v"))))
+-- "  TYPE ERROR                      : a program must be `let t = new i0 in e`"
 
 -- | The Gram report for an already-typed program: the denotation, its
 -- Kraus operators, the pairwise table, and the one sentence the three ranks
@@ -134,6 +190,10 @@ typedGramReport tp =
     m = tpVisDim tp
     k = coreMap tp
 
+-- The slice, Gram and Choi ranks line, for spread-and-read.
+-- >>> mapM_ print (filter (\l -> take 7 (dropWhile (== ' ') l) == "slice /") (either (const []) typedGramReport (checkProgram spreadAndRead)))
+-- "  slice / Gram / Choi rank        : 2 / 2 / 2 (the three agree)"
+
 reportContext :: Program -> String
 reportContext p = case checkProgram p of
   Left e   -> unlines (kv "TYPE ERROR" (show e))
@@ -154,7 +214,23 @@ reportContext p = case checkProgram p of
              ++ "for, and it is why a rank is the right thing to compute.")
     where cls = standardClients (tpVisDim tp)
 
+-- >>> mapM_ print (take 4 (lines (reportContext spreadAndPark)))
+-- "  A client appends one gate to the visible register and reads outcome"
+-- "  statistics; the temporary is already gone. This is everything it can see."
+-- ""
+-- "  continuation @ input outcome statistics"
+-- >>> mapM_ print (filter (\l -> take 6 (dropWhile (== ' ') l) == "its ra") (lines (reportContext spreadAndPark)))
+-- "  its rank                        : 1"
+
 reportWitness :: Program -> String
 reportWitness p = case checkProgram p of
   Left e   -> unlines (kv "TYPE ERROR" (show e))
   Right tp -> unlines (explainWitness tp (synthesize tp))
+
+-- >>> mapM_ print (take 2 (lines (reportWitness spreadAndRead)))
+-- "  no source witness for           : example (B) = program (b): spread and read"
+-- "  reason                          : the drop is unsafe: the slices span 2"
+-- >>> mapM_ print (take 3 (lines (reportWitness spreadAndPark)))
+-- "  parked state  g                 : [sqrt2/2, sqrt2/2]"
+-- "  its ray  [g]                    : [1, 1]"
+-- ""

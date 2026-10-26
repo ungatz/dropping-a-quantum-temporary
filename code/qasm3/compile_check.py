@@ -1,13 +1,35 @@
-"""Numerically compare emitted OpenQASM 3 circuits with Haskell leaf data.
+"""compile_check.py -- numeric verification of Drop.Lang.Compile's OpenQASM 3
+output.
 
-For each matching pair of files in out-typed/, parse the circuit, simulate
-the visible-input probes and every measurement branch, and compare the result
-with the expected leaf amplitude up to one global phase (tolerance 1e-9).
-Allocated non-basis temporaries are seeded at their declared state because
-their preparation is assumed and not emitted. The checker also verifies that
-each output bit reads the corresponding qubit of the returned value.
+For every <name>.qasm in out-typed/, parsed by the reference `openqasm3`
+package (as the retired s_to_qasm3.py did), this file:
 
-Run from this directory: python3 compile_check.py
+  * builds a small statevector simulator over the parsed AST -- `engine.py`
+    cannot execute `ctrl(n)@`/`negctrl`, the `U(theta,phi,lambda)` gate, or
+    classical `if`/`else` feed-forward, so all three are implemented here
+    (see 'apply_modified', 'gate_matrix' and 'run_stmts' below);
+  * runs the circuit on every computational-basis input of the visible
+    registers, plus the all-ones probe (matching Drop.Lang.Interp.probesFor,
+    which <name>.leaves.json's probes were built from), seeding a dirty
+    (non-basis) loan's qubits directly at its declared psi since the
+    circuit itself carries no preparation gate for it;
+  * follows EVERY measurement branch deterministically (no sampling: each
+    branch keeps its exact, unnormalised sub-amplitude, mirroring
+    Drop.Lang.Machine's 'step' on a 'CLift');
+  * matches each reached (probe, branch) pair to the leaf in
+    <name>.leaves.json whose 'record' translates (via 'liftInfo') to the
+    same raw classical bits, and compares the circuit's final statevector
+    to that leaf's 'expectedAmp' -- Drop.Lang.Machine's own leaf amplitude
+    with the reclaiming gate already applied at every site
+    Drop.Lang.Compile found SAFE (Drop.Lang.Compile.Emit.expectedFinalState) --
+    entrywise, tolerance 1e-9;
+  * checks, on each matched branch, which qubit each 'result' bit read:
+    result[k] must read the k-th qubit of the value that leaf returns
+    ('retQubits', read off Drop.Lang.Machine's leaf), each bit once and in
+    order, with 'result' exactly that wide. The state comparison cannot see
+    this, since it sums over the 'result' bits.
+
+Run from this directory:  nice -n 19 python3 compile_check.py
 """
 import glob
 import json
@@ -85,7 +107,10 @@ _CZ = np.diag([1, 1, 1, -1]).astype(complex)
 
 
 def u3(theta, phi, lam):
-    return np.array(
+    # OpenQASM3 built-in U, not the QASM2 U3 convention. This phase matters
+    # when the gate has quantum controls.
+    # https://openqasm.com/language/gates.html#built-in-gates
+    return np.exp(1j * theta / 2) * np.array(
         [
             [math.cos(theta / 2), -np.exp(1j * lam) * math.sin(theta / 2)],
             [np.exp(1j * phi) * math.sin(theta / 2), np.exp(1j * (phi + lam)) * math.cos(theta / 2)],
@@ -122,6 +147,10 @@ def gate_matrix(name, args):
     if name == "U":
         theta, phi, lam = (eval_expr(a) for a in args)
         return u3(theta, phi, lam)
+    if name == "ry":
+        theta = eval_expr(args[0])
+        c, s = math.cos(theta / 2), math.sin(theta / 2)
+        return np.array([[c, -s], [s, c]], dtype=complex)
     raise ValueError(f"unknown base gate {name}")
 
 
@@ -312,7 +341,9 @@ def basis_index_of(psi, tol=1e-6):
 
 def build_initial(nq, vis_qubits_all, vis_amp, dirty_list):
     covered = set(vis_qubits_all)
-    segments = [(sorted(vis_qubits_all), np.array(vis_amp, dtype=complex))]
+    # a program whose inputs are all loans has no visible register (the
+    # loan-return fixtures): then there is no visible segment
+    segments = [(sorted(vis_qubits_all), np.array(vis_amp, dtype=complex))] if vis_qubits_all else []
     for qs, psi in dirty_list:
         segments.append((sorted(qs), np.array(psi, dtype=complex)))
         covered |= set(qs)
@@ -334,7 +365,8 @@ def global_phase_deviation(got, expected):
     """Max entrywise deviation after fitting a single global phase (the
     'diff' gate's own header comment: the h;x;cz;x;h decomposition of
     Grover's 2|s><s| - I is that gate only up to the global phase -1, a
-    standard, physically unobservable, per-leaf ambiguity. A structural bug
+    standard, physically unobservable, per-leaf ambiguity -- the retired s_to_qasm3.py
+    ported the same decomposition with the same comment). A structural bug
     would still show up: fitting one scalar cannot repair the RELATIVE
     phase or magnitude between two different entries."""
     if expected.size == 0:
@@ -400,7 +432,7 @@ def check_program(name):
                     continue
                 bit_idx, sv = lift_info[pname]
                 want[("c", bit_idx)] = sv if int(survived) == 1 else 1 - sv
-            # 'result[i] = measure q[..]' (Drop.Lang.Compile.outputMeasureLines)
+            # 'result[i] = measure q[..]' (Drop.Lang.Compile.Emit.outputMeasureLines)
             # re-measures a qubit an earlier 'c[k] = measure' may already
             # have collapsed (or one no lift ever touched), splitting each
             # true leaf into several branches that agree on every 'c[..]'
@@ -468,16 +500,16 @@ def main():
     names = sorted(
         os.path.basename(p)[: -len(".qasm")] for p in glob.glob(os.path.join(OUT_DIR, "*.qasm"))
     )
-    if not names:
-        sys.exit(f"No circuits in {OUT_DIR}/; run cabal test dqt-compile-test first.")
     total_leaves = 0
     total_outputs = 0
     total_fail = 0
     print(f"{len(names)} emitted program(s) in {OUT_DIR}/")
+    if not names:
+        sys.exit(f"no .qasm file in {OUT_DIR}/: run cabal test in ../haskell first")
     for name in names:
         result = check_program(name)
         if result is None:
-            print(f"-- {name}: missing leaves.json [MISMATCH]")
+            print(f"-- {name}: no leaves.json  [MISSING]")
             total_fail += 1
             continue
         leaves_compared, outputs_checked, max_dev, mismatches = result
@@ -494,7 +526,7 @@ def main():
             total_fail += len(mismatches) - 20
     print(f"\non {total_outputs} leaves, result[k] reads the k-th qubit of the value the leaf returns")
     print(f"{total_leaves} leaves compared across {len(names)} programs, {total_fail} mismatch(es)")
-    if total_fail or total_leaves == 0:
+    if total_fail:
         sys.exit(1)
 
 

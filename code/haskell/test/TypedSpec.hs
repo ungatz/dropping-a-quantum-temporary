@@ -1,97 +1,93 @@
--- TypedSpec.hs: checks for the typed surface language -- Drop.Lang.Typed,
--- Drop.Lang.Check, Drop.Lang.Machine, Drop.Lang.Elab -- in its own test-suite
--- stanza, so it can be run alone.
+-- TypedSpec: the typed surface language against the flat many-register engine.
 --
--- Sections:
---   (a) every programs/*.s corpus program, converted to the typed syntax
---       via Drop.Lang.Elab.flatToProgram, typechecks;
---   (b) the three previously-stuck shapes run to a value;
---   (c) a random stuck-state search: >= 2000 small well-typed core terms,
---       each checked for progress, preservation and the termination
---       measure;
---   (d) machine = denotation: every corpus program, and the (c) terms,
---       agree between Drop.Lang.Machine and Drop.Lang.Elab + Drop.Lang.Interp;
---   (e) the desugaring lemma, on a handful of hand-built surface terms;
---   (n) Step-New's second side condition: the machine refuses a name that
---       is bound later in the term, which would clone a register;
---   (o) the termination bound of the type-safety theorem's clause (3): the number of
---       statements along the longest branch, an `if` counting as one;
---   (p) the type-safety theorem's clause (5): along every run of every corpus program, the
---       term's context is the allocated registers minus the dropped ones;
---   (q) the desugaring lemma on the corpus: expanding a block changes no state at
---       any site, hence no verdict;
---   (g) the site definition adversarially: loans, tuple blocks, unreachable records;
---   (j) the site definition's clause (3) at a block of several registers;
---   (l) the loan discipline: every loan dropped exactly once, never
---       returned (Drop.Lang.Check.loanDiscipline).
---
--- No external test framework and no 'random' package (offline build): a
--- tiny deterministic linear congruential generator supplies the ">= 2000
--- random terms" of (c), so a failing run is exactly reproducible by its
--- printed seed.
+-- Question: Do the typed language -- its syntax, its statics and its
+--           five-rule machine -- and the flat engine that decides every
+--           verdict say the same about the same program?
+-- Answer:   Groups of checks, each tagged in the printed output:
+--           (a) every programs/*.s corpus program, read as a typed program
+--               (Drop.Lang.Elab.flatToProgramR), typechecks at the result
+--               type its header declares;
+--           (b) three shapes of term run to a value: a bare operation in
+--               tail position, a lift inside a block, a tail if;
+--           (c) a random search of 2000 small well-typed core terms, each
+--               checked for progress, preservation and the termination
+--               measure;
+--           (d) the machine and the denotation agree (Drop.Lang.Machine
+--               against Drop.Lang.Elab and Drop.Lang.Interp) on every corpus
+--               program, on 200 of the random terms and on the programs of (g);
+--           (e) the desugaring lemma, on a few hand-built surface terms;
+--           (f) trace preservation: the sum over records of E_o^dagger E_o
+--               is the identity, on every corpus program;
+--           (g) the site and the criterion, adversarially: loans, tuple
+--               blocks, unreachable records, refusals by name;
+--           (j) the site definition's clause (3) at a block of several
+--               registers;
+--           (l) the loan discipline: every loan dropped exactly once, never
+--               returned (Drop.Lang.Check.loanDiscipline);
+--           (n) Step-New's second side condition: the machine refuses a name
+--               that is bound later in the term, which would clone a register;
+--           (o) the termination bound of the type-safety theorem's clause (3):
+--               the statements along the longest branch, an `if` counting as one;
+--           (p) the type-safety theorem's clause (5): along every run of every
+--               corpus program, the term's context is the allocated registers
+--               minus the dropped ones;
+--           (q) the desugaring lemma on the corpus: expanding a block changes
+--               no state at any site, hence no verdict.
+--           There is no external test framework and no 'random' package: a
+--           deterministic linear congruential generator supplies the random
+--           terms, so a failing run is reproduced by its printed seed.
+-- Paper:    thm:typesafety, lem:desugar, def:site, thm:criterion,
+--           prop:composite, sec:lang:statics, sec:lang:dynamics, fig:machine
+-- Shapes:   Term         a core term: Return, Do statement rest, If
+--           Surface      a term with blocks (SBlock), before desugaring
+--           Config       a machine configuration: term, names, amplitudes, records
+--           Seed         the generator's state, one Integer
+--           GenSt        what the term generator knows: live wires, counters
 
 module Main (main) where
 
-import Control.Monad (forM, unless)
+import Control.Monad (unless)
 import Data.IORef
 import Data.List (isInfixOf, nub, (\\))
-import System.Exit (exitFailure)
 
-import Drop.Lang.Cyclo (Cyclo)
+import Drop.Lang.Scalar (Cyclo, Conj (..))
 import Drop.Lang.Check
 import Drop.Lang.Elab
 import Drop.Lang.Gates
 import Drop.Lang.Machine
-import Drop.Lang.QState
-import Drop.Lang.Ring (Conj (..))
-import Drop.Lang.Syntax (VisSpec, Prog, Sel (..), Cmd (..), Guard (..))
-import Drop.Lang.Parser (SFile (..), parseProgram, renderProgram, sfVis)
-import Drop.Lang.Typed
+import Drop.Lang.State
+import Drop.Lang.Flat (VisSpec, Prog, Sel (..), Cmd (..), Guard (..))
+import Drop.Lang.Parser (parseProgram)
+import Drop.Lang.Render (SFile (..), renderProgram, sfVis)
+import Drop.Lang.Syntax
 import qualified Data.Map.Strict as Map
 import qualified Drop.Lang.Interp as I
+import qualified Drop.Lang.Criterion as C
 import qualified Drop.Lang.Report.Run as RR
 import Drop.Lang.Report.Run (runText, showSite)
 import qualified Drop.Lang.Checks.Parser as TP
 
--- A tiny counting/assertion harness -----------------------------------
-
-data Counters = Counters { cPass :: IORef Int, cFail :: IORef Int }
-
-newCounters :: IO Counters
-newCounters = Counters <$> newIORef 0 <*> newIORef 0
-
-check1 :: Counters -> String -> Bool -> IO ()
-check1 c name ok = do
-  if ok then modifyIORef' (cPass c) (+ 1) else modifyIORef' (cFail c) (+ 1)
-  putStrLn ((if ok then "  PASS  " else "  FAIL  ") ++ name)
-
-report :: Counters -> IO ()
-report c = do
-  p <- readIORef (cPass c)
-  f <- readIORef (cFail c)
-  putStrLn ""
-  putStrLn (show (p + f) ++ " checks, " ++ show p ++ " passed, " ++ show f ++ " failed")
-  unless (f == 0) exitFailure
+import Harness (Counters, check1, newCounters, report)
 
 -- (a) The corpus, typechecked -------------------------------------------
 
 corpusFiles :: [FilePath]
 corpusFiles = TP.progFiles
 
-parsedCorpus :: [(FilePath, VisSpec, Prog Cyclo)]
-parsedCorpus =
-  [ (f, vis, prog) | f <- corpusFiles, Right (vis, prog) <- [TP.parsed f] ]
+parsedCorpus :: TP.Corpus -> [(FilePath, VisSpec, Prog Cyclo)]
+parsedCorpus corpus =
+  [ (f, vis, prog) | f <- corpusFiles, Right (vis, prog) <- [TP.parsed corpus f] ]
 
 -- | Every corpus file, as the parser reads it whole: header, body and the
 -- value its `return` names.
-parsedFiles :: [(FilePath, SFile)]
-parsedFiles = [ (f, sf) | f <- corpusFiles, Right sf <- [TP.parsedFile f] ]
+parsedFiles :: TP.Corpus -> [(FilePath, SFile)]
+parsedFiles corpus = [ (f, sf) | f <- corpusFiles, Right sf <- [TP.parsedFile corpus f] ]
 
-corpusChecks :: Counters -> IO ()
-corpusChecks c = do
-  putStrLn ("(a) corpus typechecking: " ++ show (length parsedCorpus) ++ " of "
+corpusChecks :: TP.Corpus -> Counters -> IO ()
+corpusChecks corpus c = do
+  putStrLn ("(a) corpus typechecking: " ++ show (length (parsedCorpus corpus)) ++ " of "
             ++ show (length corpusFiles) ++ " files parsed")
-  check1 c "every listed corpus file parsed" (length parsedCorpus == length corpusFiles)
+  check1 c "every listed corpus file parsed" (length (parsedCorpus corpus) == length corpusFiles)
   n <- newIORef (0 :: Int)
   mapM_ (\(f, sf) -> do
             let prog' = flatToProgramR (sfVis sf) (sfReturn sf) (sfBody sf)
@@ -101,27 +97,27 @@ corpusChecks c = do
               Right ty -> putStrLn ("    " ++ f ++ ": typechecked at " ++ show ty
                                      ++ ", expected " ++ show want)
               Left e -> putStrLn ("    " ++ f ++ ": " ++ showTypeError e)
-        ) parsedFiles
+        ) (parsedFiles corpus)
   ok <- readIORef n
-  check1 c ("all " ++ show (length parsedFiles)
+  check1 c ("all " ++ show (length (parsedFiles corpus))
             ++ " corpus programs typecheck at the result type their header declares")
-         (ok == length parsedFiles)
+         (ok == length (parsedFiles corpus))
 
 -- (d) machine = denotation, on the corpus --------------------------------
 
 -- | Every basis assignment of a program's loans, jointly (the empty
 -- environment for a loan-free program): a spread of concrete inputs to
--- check the two engines against, not a re-derivation of Drop.Lang.Interp's
+-- check the two engines against, not a re-derivation of Drop.Lang.Criterion's
 -- own (exhaustive) loan criterion, which decides safety separately.
 loanEnvCombos :: [(String, Int)] -> [[(String, StateV Cyclo)]]
 loanEnvCombos [] = [[]]
 loanEnvCombos ((x, d) : rest) =
   [ (x, ket [d] [k]) : env | k <- [0 .. d - 1], env <- loanEnvCombos rest ]
 
-corpusMachineAgrees :: Counters -> IO ()
-corpusMachineAgrees c = machineAgreesOn c "the corpus"
+corpusMachineAgrees :: TP.Corpus -> Counters -> IO ()
+corpusMachineAgrees corpus c = machineAgreesOn c "the corpus"
   "Drop.Lang.Machine agrees exactly with Drop.Lang.Elab + Drop.Lang.Interp on every corpus leaf"
-  parsedCorpus
+  (parsedCorpus corpus)
 
 -- | The same comparison over any list of parsed programs: run each on every
 -- (visible probe, loan arrival) pair and require Drop.Lang.Machine's leaf and
@@ -134,7 +130,7 @@ machineAgreesOn c label claim corpus = do
   totalRef <- newIORef (0 :: Int)
   mapM_ (\(_f, vis, prog) -> do
             let core   = fst (splitProg vis prog)
-                probes = I.probesFor vis :: [(String, StateV Cyclo)]
+                probes = C.probesFor vis :: [(String, StateV Cyclo)]
                 loans  = [ (x, d) | Loan x d <- prog ]
                 loanEnvs = loanEnvCombos loans
             mapM_ (\(_, inp) ->
@@ -175,7 +171,7 @@ flatToCoreForTest vis prog = toTerm (progTerm (flatToProgram vis prog))
 flatToSurfaceForTest :: Num a => VisSpec -> Prog a -> Surface a
 flatToSurfaceForTest vis prog = progTerm (flatToProgram vis prog)
 
--- (b) The three previously-stuck shapes ----------------------------------
+-- (b) Three shapes of term that run to a value -----------------------------
 
 runsToValue :: (Eq a, Num a) => [(Name, Int)] -> StateV a -> Term a -> Bool
 runsToValue vis inp core = not (null leaves) && all isFinal leaves
@@ -183,14 +179,14 @@ runsToValue vis inp core = not (null leaves) && all isFinal leaves
 
 stuckShapeChecks :: Counters -> IO ()
 stuckShapeChecks c = do
-  putStrLn "(b) the three previously-stuck shapes"
+  putStrLn "(b) three shapes of term that run to a value"
   -- (i) a bare operation in tail position via sugar: `H x; return x`.
   let core1 :: Term Cyclo
       core1 = Do (StGate gHC (VVar "x")) (Return (VVar "x"))
       vis1  = [("x", 2)]
-  check1 c "(i) bare operation in tail position typechecks"
+  check1 c "(i) bare operation in tail position typechecks"  -- impossible: "tail" is a word of this name, not Prelude's tail
          (checkTerm core1 (ctxFromList vis1) == Right (TReg 2))
-  check1 c "(i) bare operation in tail position runs to a value"
+  check1 c "(i) bare operation in tail position runs to a value"  -- impossible: "tail" is a word of this name
          (runsToValue vis1 [1, 0] core1)
 
   -- (ii) a lift inside a block: `q = { b = lift[{0}] x; return x }; return q`,
@@ -213,12 +209,12 @@ stuckShapeChecks c = do
   let core3 :: Term Cyclo
       core3 = Do (StLift "p" [0] "x") (If (BParam "p") (Return (VVar "x")) (Return (VVar "x")))
       vis3  = [("x", 2)]
-  check1 c "(iii) a tail if typechecks"
+  check1 c "(iii) a tail if typechecks"  -- impossible: "tail" is a word of this name, not Prelude's tail
          (checkTerm core3 (ctxFromList vis3) == Right (TReg 2))
-  check1 c "(iii) a tail if runs to a value on every leaf"
+  check1 c "(iii) a tail if runs to a value on every leaf"  -- impossible: "tail" is a word of this name
          (runsToValue vis3 [1, 0] core3)
 
--- A tiny deterministic PRNG ----------------------------------------------
+-- A tiny deterministic generator -------------------------------------------
 
 newtype Seed = Seed Integer
 
@@ -239,7 +235,7 @@ rollBool :: Seed -> Int -> (Bool, Seed)
 rollBool s chance = let (v, s') = rollN s 10000 in (v < chance, s')
 
 pick :: Seed -> [a] -> (a, Seed)
-pick s xs = let (i, s') = rollN s (length xs) in (xs !! i, s')
+pick s xs = let (i, s') = rollN s (length xs) in (xs !! i, s')  -- impossible: rollN gives an index below length xs, and every caller passes a non-empty list
 
 -- Random well-typed core-term generation ---------------------------------
 
@@ -282,84 +278,99 @@ genRandomCore seed gs
       in if stop then (finish, seed1) else
          let (choice, seed2) = pick seed1 (actionsAvailable gs)
          in case choice of
-              ANew  -> genNew seed2
-              AGate -> genGate seed2
-              ADrop -> genDrop seed2
-              ALift -> genLift seed2
-              AIf   -> genIf seed2
+              ANew  -> genNew gs seed2
+              AGate -> genGate gs seed2
+              ADrop -> genDrop gs seed2
+              ALift -> genLift gs seed2
+              AIf   -> genIf gs seed2
   where
     finish = Return (tupleValT (map fst (gLive gs)))
 
-    genNew s =
-      let (d, s1) = pick s [2, 3]
-          x = "g" ++ show (gFresh gs)
-          gs' = gs { gLive = gLive gs ++ [(x, d)], gFresh = gFresh gs + 1, gOps = gOps gs + 1 }
-          (rest, s2) = genRandomCore s1 gs'
-      in (Do (StNew x d (ket [d] [0])) rest, s2)
+-- | Allocate a fresh wire of dimension 2 or 3, then go on.
+genNew :: GenSt -> Seed -> (Term Cyclo, Seed)
+genNew gs s =
+  let (d, s1) = pick s [2, 3]
+      x = "g" ++ show (gFresh gs)
+      gs' = gs { gLive = gLive gs ++ [(x, d)], gFresh = gFresh gs + 1, gOps = gOps gs + 1 }
+      (rest, s2) = genRandomCore s1 gs'
+  in (Do (StNew x d (ket [d] [0])) rest, s2)
 
-    genGate s =
-      let live2 = [ x | (x, d) <- gLive gs, d == 2 ]
-          (useTwo, s0) = if length live2 >= 2 then rollBool s 3000 else (False, s)
-      in if useTwo
-           then let (pr, s1) = pickPair s0 live2
-                    (g, s2)  = pick s1 twoWirePool
-                    v = VPair (VVar (fst pr)) (VVar (snd pr))
-                    (rest, s3) = genRandomCore s2 (gs { gOps = gOps gs + 1 })
-                in (Do (StGate g v) rest, s3)
-           else let ((x, d), s1) = pick s0 (gLive gs)
-                    (g, s2) = pick s1 (if d == 2 then dim2Pool else dim3Pool)
-                    (rest, s3) = genRandomCore s2 (gs { gOps = gOps gs + 1 })
-                in (Do (StGate g (VVar x)) rest, s3)
-      where
-        pickPair s' xs =
-          let (a, sA) = pick s' xs
-              others  = filter (/= a) xs
-              (b, sB) = pick sA others
-          in ((a, b), sB)
+-- | Apply a gate to one live wire, or a two-wire gate to two live qubits.
+genGate :: GenSt -> Seed -> (Term Cyclo, Seed)
+genGate gs s =
+  let live2 = [ x | (x, d) <- gLive gs, d == 2 ]
+      (useTwo, s0) = if length live2 >= 2 then rollBool s 3000 else (False, s)
+  in if useTwo
+       then let (pr, s1) = pickPair s0 live2
+                (g, s2)  = pick s1 twoWirePool
+                v = VPair (VVar (fst pr)) (VVar (snd pr))
+                (rest, s3) = genRandomCore s2 (gs { gOps = gOps gs + 1 })
+            in (Do (StGate g v) rest, s3)
+       else let ((x, d), s1) = pick s0 (gLive gs)
+                (g, s2) = pick s1 (if d == 2 then dim2Pool else dim3Pool)
+                (rest, s3) = genRandomCore s2 (gs { gOps = gOps gs + 1 })
+            in (Do (StGate g (VVar x)) rest, s3)
+  where
+    pickPair s' xs =
+      let (a, sA) = pick s' xs
+          others  = filter (/= a) xs
+          (b, sB) = pick sA others
+      in ((a, b), sB)
 
-    genDrop s =
-      let ((x, _), s1) = pick s (gLive gs)
-          gs' = gs { gLive = filter ((/= x) . fst) (gLive gs), gOps = gOps gs + 1, gSite = gSite gs + 1 }
-          (rest, s2) = genRandomCore s1 gs'
-      in (Do (StDrop (gSite gs) (VVar x)) rest, s2)
+-- | Drop one live wire, at the next site number, then go on.
+genDrop :: GenSt -> Seed -> (Term Cyclo, Seed)
+genDrop gs s =
+  let ((x, _), s1) = pick s (gLive gs)
+      gs' = gs { gLive = filter ((/= x) . fst) (gLive gs), gOps = gOps gs + 1, gSite = gSite gs + 1 }
+      (rest, s2) = genRandomCore s1 gs'
+  in (Do (StDrop (gSite gs) (VVar x)) rest, s2)
 
-    genLift s =
-      let ((x, d), s1) = pick s (gLive gs)
-          (blkK, s2) = rollN s1 (d - 1)
-          block = [0 .. blkK]
-          p = "p" ++ show (gFresh gs)
-          gs' = gs { gFresh = gFresh gs + 1
-                   , gOps = gOps gs + 1, gLifts = gLifts gs + 1, gBits = gBits gs ++ [p] }
-          (rest, s3) = genRandomCore s2 gs'
-      in (Do (StLift p block x) rest, s3)
+-- | Lift a block of levels of one live wire, binding a fresh bit, then go on.
+genLift :: GenSt -> Seed -> (Term Cyclo, Seed)
+genLift gs s =
+  let ((x, d), s1) = pick s (gLive gs)
+      (blkK, s2) = rollN s1 (d - 1)
+      block = [0 .. blkK]
+      p = "p" ++ show (gFresh gs)
+      gs' = gs { gFresh = gFresh gs + 1
+               , gOps = gOps gs + 1, gLifts = gLifts gs + 1, gBits = gBits gs ++ [p] }
+      (rest, s3) = genRandomCore s2 gs'
+  in (Do (StLift p block x) rest, s3)
 
-    genIf s =
-      let (p, s1) = pick s (gBits gs)
-          -- Branches bind nothing (as the shipped .s corpus requires),
-          -- so both continue from the same live context; each may apply
-          -- its own short run of gates before rejoining.
-          (m1, s2) = genBranchGates s1 (2 :: Int) (gLive gs)
-          (m2, s3) = genBranchGates s2 (2 :: Int) (gLive gs)
-          gs' = gs { gOps = gOps gs + 1, gIfUsed = True }
-          (cont, s4) = genRandomCore s3 gs'
-          patch branch = spliceTerm branch cont
-      in (If (BParam p) (patch m1) (patch m2), s4)
+-- | Branch on a bound bit; both branches run a few gates, then rejoin the
+-- same continuation.
+genIf :: GenSt -> Seed -> (Term Cyclo, Seed)
+genIf gs s =
+  let (p, s1) = pick s (gBits gs)
+      -- Branches bind nothing (as the shipped .s corpus requires),
+      -- so both continue from the same live context; each may apply
+      -- its own short run of gates before rejoining.
+      (m1, s2) = genBranchGates s1 (2 :: Int) (gLive gs)
+      (m2, s3) = genBranchGates s2 (2 :: Int) (gLive gs)
+      gs' = gs { gOps = gOps gs + 1, gIfUsed = True }
+      (cont, s4) = genRandomCore s3 gs'
+      patch branch = spliceTerm branch cont
+  in (If (BParam p) (patch m1) (patch m2), s4)
 
-    genBranchGates s 0 _ = (Return VUnit, s)  -- placeholder root; spliced away by 'spliceTerm'
-    genBranchGates s k live =
-      let (doIt, s1) = rollBool s 6000
-      in if not doIt || null live then (Return VUnit, s1)
-         else
-           let ((x, d), s2) = pick s1 live
-               (g, s3) = pick s2 (if d == 2 then dim2Pool else dim3Pool)
-               (rest, s4) = genBranchGates s3 (k - 1) live
-           in (Do (StGate g (VVar x)) rest, s4)
+-- | Up to k gates on live wires, ending in the placeholder 'Return VUnit'
+-- that 'spliceTerm' replaces.
+genBranchGates :: Seed -> Int -> [(Name, Int)] -> (Term Cyclo, Seed)
+genBranchGates s 0 _ = (Return VUnit, s)
+genBranchGates s k live =
+  let (doIt, s1) = rollBool s 6000
+  in if not doIt || null live then (Return VUnit, s1)
+     else
+       let ((x, d), s2) = pick s1 live
+           (g, s3) = pick s2 (if d == 2 then dim2Pool else dim3Pool)
+           (rest, s4) = genBranchGates s3 (k - 1) live
+       in (Do (StGate g (VVar x)) rest, s4)
 
-    -- Replace the placeholder 'Return VUnit' leaf of a branch skeleton by
-    -- the shared continuation.
-    spliceTerm (Return VUnit) k = k
-    spliceTerm (Do st m) k      = Do st (spliceTerm m k)
-    spliceTerm other _          = other  -- (a lift or an `if` never occurs here)
+-- | Replace the placeholder 'Return VUnit' leaf of a branch skeleton by
+-- the shared continuation.
+spliceTerm :: Term Cyclo -> Term Cyclo -> Term Cyclo
+spliceTerm (Return VUnit) k = k
+spliceTerm (Do st m) k      = Do st (spliceTerm m k)
+spliceTerm other _          = other  -- (a lift or an `if` never occurs here)
 
 data Action = ANew | AGate | ADrop | ALift | AIf
 
@@ -398,67 +409,76 @@ runCounting cfg0 = go cfg0 0
       []    -> [(cfg, n)]
       succs -> concatMap (\c -> go c (n + 1)) succs
 
-randomStuckSearch :: Counters -> IO ()
-randomStuckSearch c = do
-  putStrLn ("(c) random stuck-state search: " ++ show randomTermCount ++ " terms")
-  progressRef <- newIORef (0 :: Int)
-  preserveRef <- newIORef (0 :: Int)
-  termRef     <- newIORef (0 :: Int)
-  leafRef     <- newIORef (0 :: Int)
-  covRef      <- newIORef ([] :: [String])
-  _ <- forM [0 .. randomTermCount - 1] $ \i -> do
-    let (core, _seed) = genRandomCore (seed0 i) gen0
-        vis0 = [("w0", 2)]
-    -- Well-typedness by construction, re-checked from scratch:
-    case checkTerm core (ctxFromList vis0) of
-      Left e -> putStrLn ("    term " ++ show i ++ ": FAILED TO TYPECHECK: " ++ showTypeError e)
-      Right ty0 -> do
-        modifyIORef' covRef (nubAppend (constructorsOf core))
-        let inp = replicate 2 1  -- the (1,1) unnormalized probe: nonzero on every branch it can reach
-            cfg0 = initConfig vis0 inp core
-            leafPairs = runCounting cfg0
-        modifyIORef' leafRef (+ length leafPairs)
-        -- Progress: every leaf is final (run terminated via 'step' = []
-        -- rather than a pattern-match failure, i.e. this line was reached).
-        okProg <- pure (all (isFinal . fst) leafPairs && not (null leafPairs))
-        if okProg then modifyIORef' progressRef (+ 1)
-          else putStrLn ("    term " ++ show i ++ ": progress failed")
-        -- Preservation: after every step on every path, the reconstructed
-        -- (term, live context) re-typechecks at the same type.
-        let preserved = and
-              [ case checkTerm (cfgTerm leaf) (liveCtxOf leaf) of
-                  Right ty -> ty == ty0
-                  Left _   -> False
-              | (leaf, _) <- leafPairs ]
-        if preserved then modifyIORef' preserveRef (+ 1)
-          else putStrLn ("    term " ++ show i ++ ": preservation failed")
-        -- Termination measure: run's own step count equals the
-        -- independent structural count on the same leaf's bit record.
-        let termOk = and
-              [ n == staticSteps core (\p -> lookup p (cfgBits leaf) == Just 1)
-              | (leaf, n) <- leafPairs ]
-        if termOk then modifyIORef' termRef (+ 1)
-          else putStrLn ("    term " ++ show i ++ ": termination-measure mismatch")
-  progressN <- readIORef progressRef
-  preserveN <- readIORef preserveRef
-  termN <- readIORef termRef
-  leaves <- readIORef leafRef
-  cov <- readIORef covRef
-  putStrLn ("    " ++ show leaves ++ " leaves reached across " ++ show randomTermCount ++ " terms")
-  putStrLn ("    constructs exercised: " ++ show cov)
-  check1 c "progress: every random term's every leaf is a final configuration"
-         (progressN == randomTermCount)
-  check1 c "preservation: every intermediate configuration re-typechecks at the same type"
-         (preserveN == randomTermCount)
-  check1 c "termination measure: step count equals the independent structural count"
-         (termN == randomTermCount)
+-- | What the search finds on one random term: its constructs, how many
+-- leaves it reached, and whether progress, preservation and the termination
+-- measure held.
+data TermResult = TermResult
+  { trConstructs :: [String]
+  , trLeaves     :: Int
+  , trProgress   :: Bool
+  , trPreserved  :: Bool
+  , trMeasure    :: Bool
+  }
+
+-- | Search the i-th random term, or say why it did not typecheck.
+searchTerm :: Int -> Either String TermResult
+searchTerm i =
+  case checkTerm core (ctxFromList vis0) of
+    Left e -> Left (showTypeError e)
+    Right ty0 ->
+      let inp = replicate 2 1  -- the (1,1) unnormalized probe: nonzero on every branch it can reach
+          leafPairs = runCounting (initConfig vis0 inp core)
+      in Right TermResult
+           { trConstructs = constructorsOf core
+           , trLeaves     = length leafPairs
+             -- Progress: every leaf is final (the run ended because 'step' = []).
+           , trProgress   = all (isFinal . fst) leafPairs && not (null leafPairs)
+             -- Preservation: after every step on every path, the reconstructed
+             -- (term, live context) re-typechecks at the same type.
+           , trPreserved  = and
+               [ case checkTerm (cfgTerm leaf) (liveCtxOf leaf) of
+                   Right ty -> ty == ty0
+                   Left _   -> False
+               | (leaf, _) <- leafPairs ]
+             -- Termination measure: run's own step count equals the
+             -- independent structural count on the same leaf's bit record.
+           , trMeasure    = and
+               [ n == staticSteps core (\p -> lookup p (cfgBits leaf) == Just 1)
+               | (leaf, n) <- leafPairs ]
+           }
   where
-    nubAppend new old = old ++ filter (`notElem` old) new
+    (core, _seed) = genRandomCore (seed0 i) gen0
+    vis0 = [("w0", 2)]
     -- The configuration's own context: the allocated registers the term
     -- still names, which the type-safety theorem's clause (5) says are the allocated ones
     -- minus the dropped ones. (p) below checks that reading against the
     -- drops the run actually crossed.
     liveCtxOf leaf = ctxFromList (ctxOf leaf)
+
+-- | Print what went wrong on one term, if anything.
+announceTerm :: (Int, Either String TermResult) -> IO ()
+announceTerm (i, Left e) = putStrLn ("    term " ++ show i ++ ": FAILED TO TYPECHECK: " ++ e)
+announceTerm (i, Right r) = do
+  unless (trProgress r) (putStrLn ("    term " ++ show i ++ ": progress failed"))
+  unless (trPreserved r) (putStrLn ("    term " ++ show i ++ ": preservation failed"))
+  unless (trMeasure r) (putStrLn ("    term " ++ show i ++ ": termination-measure mismatch"))
+
+randomStuckSearch :: Counters -> IO ()
+randomStuckSearch c = do
+  putStrLn ("(c) random stuck-state search: " ++ show randomTermCount ++ " terms")
+  let results = [ (i, searchTerm i) | i <- [0 .. randomTermCount - 1] ]
+      found   = [ r | (_, Right r) <- results ]
+      nubAppend old new = old ++ filter (`notElem` old) new
+  mapM_ announceTerm results
+  putStrLn ("    " ++ show (sum (map trLeaves found)) ++ " leaves reached across "
+            ++ show randomTermCount ++ " terms")
+  putStrLn ("    constructs exercised: " ++ show (foldl nubAppend [] (map trConstructs found)))
+  check1 c "progress: every random term's every leaf is a final configuration"
+         (length (filter trProgress found) == randomTermCount)
+  check1 c "preservation: every intermediate configuration re-typechecks at the same type"
+         (length (filter trPreserved found) == randomTermCount)
+  check1 c "termination measure: step count equals the independent structural count"
+         (length (filter trMeasure found) == randomTermCount)
 
 constructorsOf :: Term a -> [String]
 constructorsOf (Return _)  = ["return"]
@@ -477,8 +497,8 @@ randomMachineAgrees c = do
       vis0 = [("w0", 2)]
   agreeRef <- newIORef (0 :: Int)
   totalRef <- newIORef (0 :: Int)
-  -- Every term of this language elaborates: the shapes Elab used to refuse
-  -- -- a gate or a lift that renames -- do not exist, since neither binds.
+  -- Every term of this language elaborates: neither a gate nor a lift binds
+  -- a new name, so no term needs a renaming that Elab cannot give.
   mapM_ (\core -> case elabE core of
             Left e -> putStrLn ("    a random term did not elaborate: " ++ e)
             Right prog -> do
@@ -498,7 +518,7 @@ randomMachineAgrees c = do
   agree <- readIORef agreeRef
   putStrLn ("(d, continued) machine = denotation on " ++ show total
             ++ " random-term leaves (of " ++ show sampleCount
-            ++ " sampled terms, every one of which elaborates by Lemma E)")
+            ++ " sampled terms, every one of which elaborates)")
   check1 c "Drop.Lang.Machine agrees with Drop.Lang.Elab + Drop.Lang.Interp on every sampled random term"
          (total > 0 && agree == total)
 
@@ -562,7 +582,7 @@ desugaringChecks c = do
 -- no-floating-point-anywhere gate in this file stays green).
 --
 -- The columns of E_o come from running the machine on every computational
--- basis vector of the visible input ('Drop.Lang.Interp.probesFor', taking its
+-- basis vector of the visible input ('Drop.Lang.Criterion.probesFor', taking its
 -- first 'dv' probes and dropping the trailing all-ones "sum" probe, which
 -- exists for a different check and is not a basis vector); the row space is
 -- whatever the leaf's own joint register happens to be, which the identity
@@ -575,7 +595,7 @@ desugaringChecks c = do
 -- rest of the joint register is tensored in at, fixed or not -- gate and
 -- lift steps do not care, and a loan tensors in exactly like a temporary
 -- does once its value is fixed for the run. It is not itself the loan's own
--- theorem (Drop.Lang.Interp's loan criterion, which quantifies over every
+-- theorem (Drop.Lang.Criterion's loan criterion, which quantifies over every
 -- loan value); see that module's "Loans" section.
 recordLeaves :: (Eq a, Num a)
              => VisSpec -> [(String, StateV a)] -> Term a
@@ -587,7 +607,7 @@ recordLeaves vis loanEnv core =
   ]
   where
     dv          = product (map snd vis)
-    basisInputs = take dv (map snd (I.probesFor vis))
+    basisInputs = take dv (map snd (C.probesFor vis))
 
 -- | Sigma_o E_o^dagger E_o, as a (dv x dv) matrix over the visible input's
 -- computational basis: entry (j,k) is the sum, over every record reached,
@@ -606,7 +626,7 @@ traceMatrix vis loanEnv core =
     records = nub [ r | (_, r, _) <- leaves ]
     byKey   = Map.fromList [ ((j, r), amp) | (j, r, amp) <- leaves ]
     lookupAmp j r = Map.findWithDefault
-      (error "traceMatrix: a record reached from one basis input is missing from another")
+      (error "traceMatrix: a record reached from one basis input is missing from another")  -- refusal: a record missing from one basis input's leaves
       (j, r) byKey
     innerProd u v = sum (zipWith (\a b -> conj a * b) u v)
 
@@ -617,10 +637,10 @@ traceIsPreserved :: (Eq a, Num a, Conj a) => VisSpec -> [(String, StateV a)] -> 
 traceIsPreserved vis loanEnv core =
   traceMatrix vis loanEnv core == identityMatrix (product (map snd vis))
 
-traceChecks :: Counters -> IO ()
-traceChecks c = do
+traceChecks :: TP.Corpus -> Counters -> IO ()
+traceChecks corpus c = do
   let results = [ (f, traceIsPreserved vis loanEnv0 (flatToCoreForTest vis prog))
-                | (f, vis, prog) <- parsedCorpus
+                | (f, vis, prog) <- parsedCorpus corpus
                 , let loanEnv0 = [ (x, ket [d] [0]) | Loan x d <- prog ] ]
       bad     = [ f | (f, ok) <- results, not ok ]
   putStrLn ("(f) trace preservation: Sigma_o E_o^dagger E_o = I on the visible "
@@ -634,19 +654,20 @@ traceChecks c = do
 
 main :: IO ()
 main = do
+  corpus <- TP.readCorpus
   c <- newCounters
-  corpusChecks c
+  corpusChecks corpus c
   stuckShapeChecks c
   randomStuckSearch c
-  corpusMachineAgrees c
+  corpusMachineAgrees corpus c
   randomMachineAgrees c
   desugaringChecks c
-  traceChecks c
-  siteChecks c
+  traceChecks corpus c
+  siteChecks corpus c
   stepNewCaptureChecks c
-  terminationBoundChecks c
-  hiddenRegisterChecks c
-  corpusBlockChecks c
+  terminationBoundChecks corpus c
+  hiddenRegisterChecks corpus c
+  corpusBlockChecks corpus c
   report c
 
 -- (g) the site and the criterion, adversarially -------------------------
@@ -656,7 +677,7 @@ main = do
 -- site on every record), and compared against the verdict the site definition dictates.
 -- Cases (a1)-(a3), (b1)-(b3) and (d1)-(d2) exercise a loan the engine must
 -- assign a probe state to; (a1) is the shape that separates the block-factor
--- test of clause 4 from a per-input product test.
+-- test of clause (3) from a per-input product test.
 
 -- | The verdict word at each site of a program text, in program order:
 -- @Right [(site, [verdict per record])]@, or @Left@ the rejection message.
@@ -667,105 +688,38 @@ siteVerdicts src = case runText src of
                    | s <- RR.rpSites r ]
 
 -- | The whole report as the command line prints it, so a check can name
--- the certificate ("B = { 1, 0 ; 0, 1 }") in the surface syntax.
+-- the certificate ("B = { 1, 0 ; 0, 1 }") in the paper's own spelling.
 reportText :: String -> String
 reportText src = either ("REJECTED: " ++) RR.renderReport (runText src)
 
-siteChecks :: Counters -> IO ()
-siteChecks c = do
+-- | The verdict words at each site of a program text are the wanted ones.
+verdictsAre :: Counters -> String -> String -> [(String, [String])] -> IO ()
+verdictsAre c name src want = check1 c name (siteVerdicts src == Right want)
+
+-- | The program text is rejected, and the message contains the fragment.
+rejectsNaming :: Counters -> String -> String -> String -> IO ()
+rejectsNaming c name src frag = check1 c name $ case siteVerdicts src of
+  Left e -> frag `isInfixOf` e
+  _      -> False
+
+-- | The program's report prints this block factor exactly once.
+blockFactorIs :: Counters -> String -> String -> String -> IO ()
+blockFactorIs c name src b = check1 c name (count ("B = " ++ b) (reportText src) == 1)
+
+siteChecks :: TP.Corpus -> Counters -> IO ()
+siteChecks corpus c = do
   putStrLn "(g) the site and the criterion, adversarially (the site definition)"
-  let eq name src want = check1 c name (siteVerdicts src == Right want)
-      rejects name src frag = check1 c name $ case siteVerdicts src of
-        Left e -> frag `isInfixOf` e
-        _      -> False
-
-  -- (a) a loan block that is a product at every input but not B (x) W.
-  -- Swap moves the loan's whole state into a temporary and leaves |0> on
-  -- the loan: the block IS constant, so a per-input product test (or the
-  -- fixed-ray test a temporary gets) accepts; no fixed B on the loan alone
-  -- reproduces the joint action, so clause 4 refuses.
-  eq "(a1) a loan swapped into a temporary is UNSAFE, though its block is constant"
-     progSwapLoan [("a", ["Unsafe"])]
-  eq "(a2) the same program with the swap undone is SAFE"
-     progSwapLoanBack [("a", ["Safe"])]
-  eq "(a3) a loan hit with CZ against the input is UNSAFE (every basis label fixed)"
-     progCZLoan [("t", ["Unsafe"])]
-
-  -- (b) two live loans, dropped separately and as a tuple.
-  eq "(b1) two loans, each restored, are SAFE at their own sites"
-     progTwoLoans [("a", ["Safe"]), ("b", ["Safe"])]
-  check1 c "(b1') each of the two loans is reclaimed with B = I"
-    (count "B = { 1, 0 ; 0, 1 }" (reportText progTwoLoans) == 2)
-  eq "(b2) two loans, only the first restored: SAFE then UNSAFE"
-     progTwoLoansHalf [("a", ["Safe"]), ("b", ["Unsafe"])]
-  -- (b3) HAND: the CCX pair cancels and b is never touched, so the site map
-  -- is |i>_a |j>_b |q1> |q>  |->  itself. The site definition's clause (4) with
-  -- H_loan = H_a (x) H_b reads off B = I_4 and W = I. Expect SAFE.
-  eq "(b3) two loans dropped as ONE tuple: SAFE, block factor I_4"
-     progTwoLoansTuple [("(a, b)", ["Safe"])]
-  check1 c "(b3') the tuple block's certificate is the 4x4 identity"
-    (count "B = { 1, 0, 0, 0 ; 0, 1, 0, 0 ; 0, 0, 1, 0 ; 0, 0, 0, 1 }"
-           (reportText progTwoLoansTuple) == 1)
-
-  -- (c) a loan measured by a lift, then dropped: its would-be block factor
-  -- is a projector, which is not an isometry, so no record is safe.
-  eq "(c1) a lifted loan is UNSAFE on every record"
-     progLiftedLoan [("a", ["Unsafe", "Unsafe"])]
-
-  -- (d) a block mixing a loan with a temporary: the site definition's clause (4) covers it with
-  -- a RECTANGULAR block factor, and the engine decides it there.
-  -- HAND: t is allocated at |0> and nothing is done, so the site map is
-  -- |b>_a |v>_x  |->  |b>_a |0>_t (x) |v>_x. Writing H_block = H_a (x) H_t
-  -- in the order the drop names them, B|0> = |00> = e_0 and B|1> = |10> =
-  -- e_2, i.e. B = I (x) |0>, the 4x2 isometry with B^dagger B = I_2.
-  -- Expect SAFE, B = { 1, 0 ; 0, 0 ; 0, 1 ; 0, 0 }.
-  eq "(d1) a loan and a temporary in one tuple drop: SAFE, B rectangular"
-     progLoanAndTemp [("(a, t)", ["Safe"])]
-  check1 c "(d2) that block's factor is I (x) |0> : H_a -> H_a (x) H_t"
-    (count "B = { 1, 0 ; 0, 0 ; 0, 1 ; 0, 0 }" (reportText progLoanAndTemp) == 1)
-
-  -- (e) an input register is not special: dropping it is the copy-input
-  -- leak whenever the program has read it, and d = 1 is not a register.
-  eq "(e1) dropping an input the program has copied is UNSAFE"
-     progDropInput [("x", ["Unsafe"])]
-  rejects "(e2) a register of dimension 1 is not a register"
-     "prog p (x : [1]) : 1 { drop x; return () }" "at least 2"
-
-  -- (f) a closed program (no inputs): the Bell pair is safe jointly and
-  -- unsafe wire by wire -- the composite-temporary proposition on a one-point domain.
-  eq "(f1) a closed program's Bell pair is SAFE dropped as one block"
-     progBellJoint [("(a, b)", ["Safe"])]
-  eq "(f2) the same pair is UNSAFE at each wire dropped alone"
-     progBellApart [("a", ["Unsafe"]), ("b", ["Unsafe"])]
-
-  -- (g) an unreachable record: the site map is 0, and the site definition's clause (3) makes it
-  -- safe by convention; the engine reports it, and does not divide by zero.
-  eq "(g1) a lift whose block has probability 0 gives Unreachable, not a crash"
-     progUnreachable [("t", ["Unreachable", "Safe"])]
-
-  -- (h) a temporary in a program that also holds a loan. The site map's
-  -- domain is the whole input context, loans included, so the loan is
-  -- varied too; seeding it at |0> instead calls (h1) safe.
-  eq "(h1) a temporary that copies a live loan is UNSAFE, and so is the loan"
-     progTempReadsLoan [("t", ["Unsafe"]), ("a", ["Unsafe"])]
-  eq "(h2) the same temporary with the copy undone is SAFE, and so is the loan"
-     progTempReadsLoanBack [("t", ["Safe"]), ("a", ["Safe"])]
-  eq "(h3) a temporary beside an untouched loan is SAFE, and the loan is too"
-     progTempBesideLoan [("t", ["Safe"]), ("a", ["Safe"])]
-
-  -- (i) an `if` branch binds nothing, and a block is spliced, so a block
-  -- that shadows an outer name is a repeated binder. Both are refused with
-  -- a line number rather than mis-run.
-  rejects "(i1) an allocation inside an if branch is refused by name"
-     progAllocInBranch "'new' inside an if branch"
-  rejects "(i1') a drop in both arms is refused by name, each arm read in the scope before the if"
-     progDropInBothArms "'drop' inside an if branch"
-  rejects "(i2) a block that shadows its own binder is refused by name"
-     "prog p (x : [2]) : [2] * [2] { y = { new y : [2] @ |0>; return y }; return (x, y) }"
-     "already exists"
-
+  swappedLoanChecks c
+  twoLoansChecks c
+  liftedLoanChecks c
+  loanAndTemporaryChecks c
+  inputRegisterChecks c
+  closedProgramChecks c
+  unreachableRecordChecks c
+  temporaryBesideLoanChecks c
+  branchBinderChecks c
   blockChecks c
-  loanDisciplineChecks c
+  loanDisciplineChecks corpus c
 
   -- (m) the elaboration agrees with the machine here too: the corpus has no
   -- tuple drop and no program with two loans, so (d) never sees either.
@@ -790,10 +744,112 @@ siteChecks c = do
   -- (o) `drop ()`, a site with no register under the site definition's clause (1): the parser admits
   -- it, it renders back as `drop ();`, its block has dimension one, and the
   -- site is safe with the unit scalar as certificate on every input.
-  eq "(o) drop (): a site with no register, SAFE"
+  verdictsAre c "(o) drop (): a site with no register, SAFE"
      progDropUnit [("()", ["Safe"])]
   check1 c "(o') drop () renders back as itself"
     (renderRoundTrips progDropUnit)
+
+-- (a) a loan block that is a product at every input but not B (x) W.
+-- Swap moves the loan's whole state into a temporary and leaves |0> on
+-- the loan: the block IS constant, so a per-input product test (or the
+-- fixed-ray test a temporary gets) accepts; no fixed B on the loan alone
+-- reproduces the joint action, so clause (3) refuses.
+swappedLoanChecks :: Counters -> IO ()
+swappedLoanChecks c = do
+  verdictsAre c "(a1) a loan swapped into a temporary is UNSAFE, though its block is constant"
+     progSwapLoan [("a", ["Unsafe"])]
+  verdictsAre c "(a2) the same program with the swap undone is SAFE"
+     progSwapLoanBack [("a", ["Safe"])]
+  verdictsAre c "(a3) a loan hit with CZ against the input is UNSAFE (every basis label fixed)"
+     progCZLoan [("t", ["Unsafe"])]
+
+-- (b) two live loans, dropped separately and as a tuple.
+twoLoansChecks :: Counters -> IO ()
+twoLoansChecks c = do
+  verdictsAre c "(b1) two loans, each restored, are SAFE at their own sites"
+     progTwoLoans [("a", ["Safe"]), ("b", ["Safe"])]
+  check1 c "(b1') each of the two loans is reclaimed with B = I"
+    (count "B = { 1, 0 ; 0, 1 }" (reportText progTwoLoans) == 2)
+  verdictsAre c "(b2) two loans, only the first restored: SAFE then UNSAFE"
+     progTwoLoansHalf [("a", ["Safe"]), ("b", ["Unsafe"])]
+  -- (b3) By hand: the CCX pair cancels and b is never touched, so the site map
+  -- is |i>_a |j>_b |q1> |q>  |->  itself. The site definition's clause (3) with
+  -- H_loan = H_a (x) H_b reads off B = I_4 and W = I. Expect SAFE.
+  verdictsAre c "(b3) two loans dropped as ONE tuple: SAFE, block factor I_4"
+     progTwoLoansTuple [("(a, b)", ["Safe"])]
+  blockFactorIs c "(b3') the tuple block's certificate is the 4x4 identity"
+    progTwoLoansTuple "{ 1, 0, 0, 0 ; 0, 1, 0, 0 ; 0, 0, 1, 0 ; 0, 0, 0, 1 }"
+
+-- (c) a loan measured by a lift, then dropped: its would-be block factor
+-- is a projector, which is not an isometry, so no record is safe.
+liftedLoanChecks :: Counters -> IO ()
+liftedLoanChecks c =
+  verdictsAre c "(c1) a lifted loan is UNSAFE on every record"
+     progLiftedLoan [("a", ["Unsafe", "Unsafe"])]
+
+-- (d) a block mixing a loan with a temporary: the site definition's clause (3) covers it with
+-- a RECTANGULAR block factor, and the engine decides it there.
+-- By hand: t is allocated at |0> and nothing is done, so the site map is
+-- |b>_a |v>_x  |->  |b>_a |0>_t (x) |v>_x. Writing H_block = H_a (x) H_t
+-- in the order the drop names them, B|0> = |00> = e_0 and B|1> = |10> =
+-- e_2, i.e. B = I (x) |0>, the 4x2 isometry with B^dagger B = I_2.
+-- Expect SAFE, B = { 1, 0 ; 0, 0 ; 0, 1 ; 0, 0 }.
+loanAndTemporaryChecks :: Counters -> IO ()
+loanAndTemporaryChecks c = do
+  verdictsAre c "(d1) a loan and a temporary in one tuple drop: SAFE, B rectangular"
+     progLoanAndTemp [("(a, t)", ["Safe"])]
+  blockFactorIs c "(d2) that block's factor is I (x) |0> : H_a -> H_a (x) H_t"
+    progLoanAndTemp "{ 1, 0 ; 0, 0 ; 0, 1 ; 0, 0 }"
+
+-- (e) an input register is not special: dropping it is the copy-input
+-- leak whenever the program has read it, and d = 1 is not a register.
+inputRegisterChecks :: Counters -> IO ()
+inputRegisterChecks c = do
+  verdictsAre c "(e1) dropping an input the program has copied is UNSAFE"
+     progDropInput [("x", ["Unsafe"])]
+  rejectsNaming c "(e2) a register of dimension 1 is not a register"
+     "prog p (x : [1]) : 1 { drop x; return () }" "at least 2"
+
+-- (f) a closed program (no inputs): the Bell pair is safe jointly and
+-- unsafe wire by wire -- the composite-temporary proposition on a one-point domain.
+closedProgramChecks :: Counters -> IO ()
+closedProgramChecks c = do
+  verdictsAre c "(f1) a closed program's Bell pair is SAFE dropped as one block"
+     progBellJoint [("(a, b)", ["Safe"])]
+  verdictsAre c "(f2) the same pair is UNSAFE at each wire dropped alone"
+     progBellApart [("a", ["Unsafe"]), ("b", ["Unsafe"])]
+
+-- (g) an unreachable record: the site map is 0, and the site definition's clause (3) makes it
+-- safe by convention; the engine reports it, and does not divide by zero.
+unreachableRecordChecks :: Counters -> IO ()
+unreachableRecordChecks c =
+  verdictsAre c "(g1) a lift whose block has probability 0 gives Unreachable, not a crash"
+     progUnreachable [("t", ["Unreachable", "Safe"])]
+
+-- (h) a temporary in a program that also holds a loan. The site map's
+-- domain is the whole input context, loans included, so the loan is
+-- varied too; seeding it at |0> instead calls (h1) safe.
+temporaryBesideLoanChecks :: Counters -> IO ()
+temporaryBesideLoanChecks c = do
+  verdictsAre c "(h1) a temporary that copies a live loan is UNSAFE, and so is the loan"
+     progTempReadsLoan [("t", ["Unsafe"]), ("a", ["Unsafe"])]
+  verdictsAre c "(h2) the same temporary with the copy undone is SAFE, and so is the loan"
+     progTempReadsLoanBack [("t", ["Safe"]), ("a", ["Safe"])]
+  verdictsAre c "(h3) a temporary beside an untouched loan is SAFE, and the loan is too"
+     progTempBesideLoan [("t", ["Safe"]), ("a", ["Safe"])]
+
+-- (i) an `if` branch binds nothing, and a block is spliced, so a block
+-- that shadows an outer name is a repeated binder. Both are refused with
+-- a line number rather than mis-run.
+branchBinderChecks :: Counters -> IO ()
+branchBinderChecks c = do
+  rejectsNaming c "(i1) an allocation inside an if branch is refused by name"
+     progAllocInBranch "'new' inside an if branch"
+  rejectsNaming c "(i1') a drop in both arms is refused by name, each arm read in the scope before the if"
+     progDropInBothArms "'drop' inside an if branch"
+  rejectsNaming c "(i2) a block that shadows its own binder is refused by name"
+     "prog p (x : [2]) : [2] * [2] { y = { new y : [2] @ |0>; return y }; return (x, y) }"
+     "already exists"
 
 -- (j) the site definition's clause (3) at a block of SEVERAL registers ---------------
 --
@@ -810,42 +866,49 @@ siteChecks c = do
 blockChecks :: Counters -> IO ()
 blockChecks c = do
   putStrLn "(j) the site definition's clause (3) at a block of several registers"
-  let eq name src want = check1 c name (siteVerdicts src == Right want)
-      cert name src b  = check1 c name (count ("B = " ++ b) (reportText src) == 1)
+  blockOfLoansChecks c
+  blockWithTemporaryChecks c
+  blockLeakChecks c
 
-  -- (j-i) HAND: two loans, nothing done. sigma_s : |i>_a |j>_b (x) |v>_x
+-- Blocks that hold loans only, or a loan beside a temporary left alone.
+blockOfLoansChecks :: Counters -> IO ()
+blockOfLoansChecks c = do
+  -- (j-i) By hand: two loans, nothing done. sigma_s : |i>_a |j>_b (x) |v>_x
   -- |-> |i>_a |j>_b (x) |v>_x, so B = I_4 on H_a (x) H_b and W = I. SAFE.
-  eq "(j-i) two loans, block (a,b), nothing done: SAFE"
+  verdictsAre c "(j-i) two loans, block (a,b), nothing done: SAFE"
      progBlockTwoLoansId [("(a, b)", ["Safe"])]
-  cert "(j-i') its block factor is I_4"
+  blockFactorIs c "(j-i') its block factor is I_4"
      progBlockTwoLoansId "{ 1, 0, 0, 0 ; 0, 1, 0, 0 ; 0, 0, 1, 0 ; 0, 0, 0, 1 }"
 
-  -- (j-ii) HAND: Swap a b then drop (a,b). sigma_s : |i>_a |j>_b |-> |j>_a
+  -- (j-ii) By hand: Swap a b then drop (a,b). sigma_s : |i>_a |j>_b |-> |j>_a
   -- |i>_b, which is B = SWAP on H_a (x) H_b, an isometry that is not the
   -- identity; SWAP^dagger = SWAP is the reclaiming gate. SAFE.
-  eq "(j-ii) two loans, Swap then drop (a,b): SAFE"
+  verdictsAre c "(j-ii) two loans, Swap then drop (a,b): SAFE"
      progBlockTwoLoansSwap [("(a, b)", ["Safe"])]
-  cert "(j-ii') its block factor is SWAP, an isometry that is not I"
+  blockFactorIs c "(j-ii') its block factor is SWAP, an isometry that is not I"
      progBlockTwoLoansSwap "{ 1, 0, 0, 0 ; 0, 0, 1, 0 ; 0, 1, 0, 0 ; 0, 0, 0, 1 }"
 
-  -- (j-iii) HAND: loan a, temporary t at |0>, nothing done. sigma_s :
+  -- (j-iii) By hand: loan a, temporary t at |0>, nothing done. sigma_s :
   -- |b>_a |-> |b>_a |0>_t, i.e. B = I (x) |0> : H_a -> H_a (x) H_t, the 4x2
   -- isometry with columns e_0 and e_2 and B^dagger B = I_2. SAFE.
-  eq "(j-iii) loan a + temporary t at |0>, block (a,t): SAFE"
+  verdictsAre c "(j-iii) loan a + temporary t at |0>, block (a,t): SAFE"
      progBlockLoanTemp [("(a, t)", ["Safe"])]
-  cert "(j-iii') its block factor is the 4x2 isometry I (x) |0>"
+  blockFactorIs c "(j-iii') its block factor is the 4x2 isometry I (x) |0>"
      progBlockLoanTemp "{ 1, 0 ; 0, 0 ; 0, 1 ; 0, 0 }"
 
-  -- (j-iv) HAND: `CX a t` with a the control and t at |0> copies the loan's
+  -- (j-iv) By hand: `CX a t` with a the control and t at |0> copies the loan's
   -- basis label: |b>_a |0>_t |-> |b>_a |b>_t. So B|b> = |bb>, columns e_0
   -- and e_3, B^dagger B = I_2 -- an isometry (not a cloner: it is linear
   -- and copies the BASIS, which is what an isometry may do). SAFE.
-  eq "(j-iv) loan a + temporary t, CX a t, block (a,t): SAFE"
+  verdictsAre c "(j-iv) loan a + temporary t, CX a t, block (a,t): SAFE"
      progBlockLoanCopy [("(a, t)", ["Safe"])]
-  cert "(j-iv') its block factor is |b> |-> |b>|b>"
+  blockFactorIs c "(j-iv') its block factor is |b> |-> |b>|b>"
      progBlockLoanCopy "{ 1, 0 ; 0, 0 ; 0, 0 ; 0, 1 }"
 
-  -- (j-v) HAND: `H t; CX t a` with t the control. Start |b>_a |0>_t;
+-- Blocks whose factor entangles the loan with a temporary.
+blockWithTemporaryChecks :: Counters -> IO ()
+blockWithTemporaryChecks c = do
+  -- (j-v) By hand: `H t; CX t a` with t the control. Start |b>_a |0>_t;
   -- H t gives |b>(|0>+|1>)/sqrt2; CX t a leaves |b>|0> and sends |b>|1> to
   -- |b+1>|1>, so the joint map is
   --     |b>_a  |->  (|b>|0> + |b+1>|1>)/sqrt2
@@ -853,45 +916,48 @@ blockChecks c = do
   -- (|00>+|11>)/sqrt2 and (|01>+|10>)/sqrt2, orthonormal), so B^dagger B =
   -- I_2. a IS entangled with t, and the block holds both, so clause (3)
   -- still factors. SAFE.
-  eq "(j-v) loan a + temporary t, H t; CX t a, block (a,t): SAFE"
+  verdictsAre c "(j-v) loan a + temporary t, H t; CX t a, block (a,t): SAFE"
      progBlockLoanEntangled [("(a, t)", ["Safe"])]
   -- 1/2*z8 + -1/2*z8^3 is 1/sqrt2: zeta_8 - zeta_8^3 = sqrt2.
-  cert "(j-v') its block factor is (1/sqrt2) (|00>,|11>) , (|01>,|10>)"
+  blockFactorIs c "(j-v') its block factor is (1/sqrt2) (|00>,|11>) , (|01>,|10>)"
      progBlockLoanEntangled
      "{ 1/2*z8+-1/2*z8^3, 0 ; 0, 1/2*z8+-1/2*z8^3 ; 0, 1/2*z8+-1/2*z8^3 ; \
      \1/2*z8+-1/2*z8^3, 0 }"
 
-  -- (j-vi) HAND: t is allocated at |0>, so `CX t a` (t the control) acts as
+  -- (j-vi) By hand: t is allocated at |0>, so `CX t a` (t the control) acts as
   -- the identity; `H a` then sends |b>_a |0>_t to (H|b>)_a |0>_t. So
   -- B = H (x) |0>, the 4x2 isometry with columns (|00>+|10>)/sqrt2 and
   -- (|00>-|10>)/sqrt2; B^dagger B = I_2. SAFE.
-  eq "(j-vi) loan a + temporary t at |0>, CX t a; H a, block (a,t): SAFE"
+  verdictsAre c "(j-vi) loan a + temporary t at |0>, CX t a; H a, block (a,t): SAFE"
      progBlockLoanHadamard [("(a, t)", ["Safe"])]
-  cert "(j-vi') its block factor is H (x) |0>"
+  blockFactorIs c "(j-vi') its block factor is H (x) |0>"
      progBlockLoanHadamard
      "{ 1/2*z8+-1/2*z8^3, 1/2*z8+-1/2*z8^3 ; 0, 0 ; 1/2*z8+-1/2*z8^3, \
      \-1/2*z8+1/2*z8^3 ; 0, 0 }"
 
-  -- (j-vii) HAND: `CX a x` writes the loan's basis label into the VISIBLE
+-- Blocks that leak the loan into the visible register.
+blockLeakChecks :: Counters -> IO ()
+blockLeakChecks c = do
+  -- (j-vii) By hand: `CX a x` writes the loan's basis label into the VISIBLE
   -- register, which the block does not hold. The site map's entry is
   --   [a_out = a_in] [x_out = x_in + a_in] [t_out = 0],
   -- and no B (x) W reproduces it: W would have to depend on a_in. Neither
   -- block sees a fixed B, so both are UNSAFE -- the block cannot be widened
   -- out of the obligation by taking the temporary in with it.
-  eq "(j-vii) loan entangled with the visible input, block (a) alone: UNSAFE"
+  verdictsAre c "(j-vii) loan entangled with the visible input, block (a) alone: UNSAFE"
      progBlockLoanLeaksAlone [("a", ["Unsafe"])]
-  eq "(j-vii') the same leak with block (a,t): still UNSAFE"
+  verdictsAre c "(j-vii') the same leak with block (a,t): still UNSAFE"
      progBlockLoanLeaksPair [("(a, t)", ["Unsafe"])]
 
   -- (j-viii) the fixture the compile suite and s_bench.py both gate on: CZ
   -- against the input keeps every basis label of t fixed, and the
-  -- block/rest reshape does not factor at all. UNSAFE, as before.
-  eq "(j-viii) cz-loan.s (test/fixtures) is still UNSAFE"
+  -- block/rest reshape does not factor at all. UNSAFE.
+  verdictsAre c "(j-viii) cz-loan.s (test/fixtures) is UNSAFE"
      czLoanFixture [("t", ["Unsafe"])]
 
-progBlockTwoLoansId, progBlockTwoLoansSwap, progBlockLoanTemp,
-  progBlockLoanCopy, progBlockLoanEntangled, progBlockLoanHadamard, progDropUnit,
-  progBlockLoanLeaksAlone, progBlockLoanLeaksPair, czLoanFixture :: String
+progBlockTwoLoansId, progBlockTwoLoansSwap, progBlockLoanTemp :: String
+progBlockLoanCopy, progBlockLoanEntangled, progBlockLoanHadamard :: String
+progDropUnit, progBlockLoanLeaksAlone, progBlockLoanLeaksPair, czLoanFixture :: String
 
 progBlockTwoLoansId =
   "prog block_two_loans_id (x : [2], loan a : [2], loan b : [2]) : [2] {\n\
@@ -984,12 +1050,12 @@ czLoanFixture =
 -- 'LeftoverWires' for the statics (and, in a .s file, the parser's own
 -- line-numbered "neither dropped nor returned"), so calling checkProgram
 -- would test which net is hit first, not the rule.
-loanDisciplineChecks :: Counters -> IO ()
-loanDisciplineChecks c = do
+loanDisciplineChecks :: TP.Corpus -> Counters -> IO ()
+loanDisciplineChecks corpus c = do
   putStrLn "(l) the loan discipline (the language definition, Drop.Lang.Check.loanDiscipline)"
 
   check1 c "(l1) mcx-dirty.s -- a loan dropped exactly once -- typechecks"
-    (case TP.fileSrc "programs/mcx-dirty.s" of
+    (case TP.fileSrc corpus "programs/mcx-dirty.s" of
        Left _    -> False
        Right src -> case RR.typecheckText src of
          Right ok -> ok == "mcx3 : [2] * [2] * [2] * [2]"
@@ -1092,10 +1158,10 @@ adversarialPrograms =
   , progBlockLoanCopy, progBlockLoanEntangled, progBlockLoanHadamard
   , progBlockLoanLeaksAlone, progBlockLoanLeaksPair ]
 
-progSwapLoan, progSwapLoanBack, progCZLoan, progTwoLoans, progTwoLoansHalf,
-  progTwoLoansTuple, progLiftedLoan, progLoanAndTemp, progDropInput,
-  progBellJoint, progBellApart, progUnreachable, progTempReadsLoan,
-  progTempReadsLoanBack, progTempBesideLoan, progAllocInBranch, progDropInBothArms :: String
+progSwapLoan, progSwapLoanBack, progCZLoan, progTwoLoans, progTwoLoansHalf :: String
+progTwoLoansTuple, progLiftedLoan, progLoanAndTemp, progDropInput :: String
+progBellJoint, progBellApart, progUnreachable, progTempReadsLoan :: String
+progTempReadsLoanBack, progTempBesideLoan, progAllocInBranch, progDropInBothArms :: String
 
 progSwapLoan =
   "prog swap_loan (x : [2], loan a : [2]) : [2] * [2] {\n\
@@ -1242,7 +1308,7 @@ progAllocInBranch =
 --
 -- The machine figure's \textsc{Step-New} allocates a name w with w not in Delta AND
 -- w NOT BOUND IN M. The second condition is the one that rules out capture:
--- the example is
+-- the paper's own example is
 --
 --     new 5 : [2] @ |0>;  new 7 : [2] @ |0>;  return (5, 7)
 --
@@ -1258,34 +1324,48 @@ progFiveSeven =
     (Do (StNew "7" 2 (ket [2] [0]))
       (Return (VPair (VVar "5") (VVar "7"))))
 
+-- | The closed program's starting configuration: no inputs, so its context
+-- is exactly what it allocates.
+fiveSevenStart :: Config Cyclo
+fiveSevenStart = initConfig [] [1] progFiveSeven
+
+-- | What follows the first allocation of 'progFiveSeven'.
+fiveSevenRest :: Term Cyclo
+fiveSevenRest = case progFiveSeven of
+  Do _ m -> m
+  _      -> error "(n): not an allocation"  -- impossible: progFiveSeven is built as an allocation
+
 stepNewCaptureChecks :: Counters -> IO ()
 stepNewCaptureChecks c = do
   putStrLn "(n) Step-New's capture side condition (the machine figure)"
-  -- A CLOSED program, so its context is exactly what it allocates.
-  let vis0 = [] :: [(Name, Int)]
-      inp0 = [1] :: StateV Cyclo
-      cfg0 = initConfig vis0 inp0 progFiveSeven
-      cont = case progFiveSeven of Do _ m -> m; _ -> error "(n): not an allocation"
+  stepNewRefusesCapture c
+  stepNewAcceptsTheWrittenName c
 
+-- The second side condition: the machine refuses a name bound later in the term.
+stepNewRefusesCapture :: Counters -> IO ()
+stepNewRefusesCapture c = do
   check1 c "(n1) the program `new 5; new 7; return (5,7)` typechecks"
-    (checkTerm progFiveSeven (ctxFromList vis0)
+    (checkTerm progFiveSeven (ctxFromList [])
        == Right (TTensor (TReg 2) (TReg 2)))
 
   -- the second side condition: 7 is bound later in M, so the machine refuses it
   check1 c "(n2) Step-New refuses w = 7: it is bound in the continuation"
-    (case stepNewAt "7" cfg0 of Nothing -> True; Just _ -> False)
+    (case stepNewAt "7" fiveSevenStart of Nothing -> True; Just _ -> False)
   check1 c "(n2') and `7` really is bound in that continuation"
-    ("7" `elem` boundIn cont)
+    ("7" `elem` boundIn fiveSevenRest)
 
   -- What the refused successor would have been: <Delta.7, sigma (x) psi ||
   -- M[7/5]>, whose own `new 7` then rebinds a name already in Delta. It is
   -- ill typed, which is the preservation failure the machine figure's caption names.
   check1 c "(n3) the successor Step-New refuses is ill typed: it clones a register"
-    (checkTerm (renameTerm "5" "7" cont) (ctxFromList [("7", 2)])
+    (checkTerm (renameTerm "5" "7" fiveSevenRest) (ctxFromList [("7", 2)])
        == Left (UsedTwice "7"))
   check1 c "(n3') and its `return` names one register twice"
-    (freeTerm (renameTerm "5" "7" cont) == ["7"])
+    (freeTerm (renameTerm "5" "7" fiveSevenRest) == ["7"])
 
+-- The first side condition, and the names the machine does take.
+stepNewAcceptsTheWrittenName :: Counters -> IO ()
+stepNewAcceptsTheWrittenName c = do
   -- the first side condition: a name already allocated
   let visX = [("x", 2)] :: [(Name, Int)]
       inpX = [1, 0] :: StateV Cyclo
@@ -1297,17 +1377,17 @@ stepNewCaptureChecks c = do
 
   -- the name the program wrote is legal, and is the one the machine takes
   check1 c "(n5) Step-New accepts w = 5, the name the program wrote"
-    (case stepNewAt "5" cfg0 of
+    (case stepNewAt "5" fiveSevenStart of
        Just cfg -> cfgNames cfg == ["5"]
        Nothing  -> False)
   check1 c "(n5') and `step` takes exactly that name"
-    (case step cfg0 of
+    (case step fiveSevenStart of
        [cfg] -> cfgNames cfg == ["5"]
        _     -> False)
 
   -- the run ends with two DISTINCT registers, so nothing was cloned
   check1 c "(n6) the run allocates two distinct registers and ends at a value"
-    (case run cfg0 of
+    (case run fiveSevenStart of
        [leaf] -> cfgNames leaf == ["5", "7"] && isFinal leaf
        _      -> False)
 
@@ -1328,7 +1408,7 @@ stepNewCaptureChecks c = do
 --
 -- The type-safety theorem's clause (3): every run reaches a final configuration in at most
 -- |M| steps, where |M| is the number of statements along the longest branch,
--- an `if` counting as ONE ('Drop.Lang.Typed.termSize').
+-- an `if` counting as ONE ('Drop.Lang.Syntax.termSize').
 
 -- | Every run's step count, one entry per leaf.
 runLengths :: Num a => Config a -> [Int]
@@ -1337,8 +1417,8 @@ runLengths cfg0 = go cfg0 0
           []    -> [n]
           succs -> concatMap (\c -> go c (n + 1)) succs
 
-terminationBoundChecks :: Counters -> IO ()
-terminationBoundChecks c = do
+terminationBoundChecks :: TP.Corpus -> Counters -> IO ()
+terminationBoundChecks corpus c = do
   putStrLn "(o) the termination bound |M|, an `if` counting as one"
 
   -- an `if` is ONE statement, not two: an empty `if` measures 1.
@@ -1378,10 +1458,10 @@ terminationBoundChecks c = do
   -- every corpus program: every run is within its own bound
   let corpusOk =
         [ (f, all (<= termSize core) (runLengths (initConfigL visC inpC loanEnv core)))
-        | (f, visC, prog) <- parsedCorpus
+        | (f, visC, prog) <- parsedCorpus corpus
         , let core = flatToCoreForTest visC prog
         , let loanEnv = [ (x, ket [d] [0]) | Loan x d <- prog ]
-        , (_, inpC) <- I.probesFor visC :: [(String, StateV Cyclo)] ]
+        , (_, inpC) <- C.probesFor visC :: [(String, StateV Cyclo)] ]
   check1 c ("(o5) every run of every corpus program is within |M| ("
             ++ show (length corpusOk) ++ " (program, probe) pairs)")
     (not (null corpusOk) && all snd corpusOk)
@@ -1412,15 +1492,15 @@ ctxIsAllocatedMinusDropped cfg =
     dropped  = concatMap srHidden (cfgSites cfg)
     dropped' = [ x | x <- cfgNames cfg, x `elem` dropped ]
 
-hiddenRegisterChecks :: Counters -> IO ()
-hiddenRegisterChecks c = do
+hiddenRegisterChecks :: TP.Corpus -> Counters -> IO ()
+hiddenRegisterChecks corpus c = do
   putStrLn "(p) the hidden registers are the allocated ones the term no longer names"
   let cfgsOf (_, vis, prog) =
         [ cfg
-        | (_, inp) <- I.probesFor vis :: [(String, StateV Cyclo)]
+        | (_, inp) <- C.probesFor vis :: [(String, StateV Cyclo)]
         , let loanEnv = [ (x, ket [d] [0]) | Loan x d <- prog ]
         , cfg <- allConfigs (initConfigL vis inp loanEnv (flatToCoreForTest vis prog)) ]
-      perFile = [ (f, cfgsOf e) | e@(f, _, _) <- parsedCorpus ]
+      perFile = [ (f, cfgsOf e) | e@(f, _, _) <- parsedCorpus corpus ]
       bad = [ f | (f, cfgs) <- perFile, not (all ctxIsAllocatedMinusDropped cfgs) ]
       total = sum [ length cfgs | (_, cfgs) <- perFile ]
   mapM_ (\f -> putStrLn ("    " ++ f ++ ": the invariant fails somewhere on a run")) bad
@@ -1444,13 +1524,13 @@ hiddenRegisterChecks c = do
 -- The desugaring lemma (2). Every corpus program with a non-tail `if` is read by
 -- Drop.Lang.Elab as a BLOCK -- @(if e {M1} else {M2}) (+)_ybar M@ -- and the
 -- statics and the machine see the expanded term, while Drop.Lang.Interp (the
--- engine that decides the language examples) runs the UNEXPANDED
+-- engine that decides every verdict the paper prints) runs the UNEXPANDED
 -- command list. So the two can be compared at the only place a verdict is
 -- read: the state at a drop site.
 --
 -- The verdict at a site is a function of (the registers in tensor order,
 -- their dimensions, the amplitude, the site's own registers) and of nothing
--- else -- 'Drop.Lang.Interp.probeResultL' takes exactly that -- so equal site
+-- else -- 'Drop.Lang.Criterion.probeResultL' takes exactly that -- so equal site
 -- states are equal verdicts.
 
 surfaceHasBlock :: Surface a -> Bool
@@ -1486,8 +1566,9 @@ flatExpandDirect ret prog = fst (go 0 prog)
     copyInto (Gate g xs : rest) k = Do (StGate g (tupleValT xs)) (copyInto rest k)
     copyInto (IfBit g t e : rest) k =
       If (gb g) (copyInto t (copyInto rest k)) (copyInto e (copyInto rest k))
-    copyInto (_ : _) _ = error "flatExpandDirect: an if-branch binds a wire"
+    copyInto (_ : _) _ = error "flatExpandDirect: an if-branch binds a wire"  -- refusal: an if-branch that binds a wire
 
+    gb (GBit b)   = BLit b
     gb (GParam p) = BParam p
     gb (GNot e)   = BNot (gb e)
     gb (GAnd x y) = BAnd (gb x) (gb y)
@@ -1504,9 +1585,9 @@ liveAtEnd vis prog = tupleValT (map fst (foldl stepLive vis prog))
       Drop xs        -> filter ((`notElem` xs) . fst) acc
       _              -> acc
 
-corpusBlockChecks :: Counters -> IO ()
-corpusBlockChecks c = do
-  let withBlocks = [ e | e@(_, vis, prog) <- parsedCorpus
+corpusBlockChecks :: TP.Corpus -> Counters -> IO ()
+corpusBlockChecks corpus c = do
+  let withBlocks = [ e | e@(_, vis, prog) <- parsedCorpus corpus
                        , surfaceHasBlock (flatToSurfaceForTest vis prog) ]
   putStrLn ("(q) expanding a block: " ++ show (length withBlocks)
             ++ " corpus programs use one -- "
@@ -1542,7 +1623,7 @@ corpusBlockChecks c = do
                                                ++ " differs on record " ++ show sel))
                            (cfgSites leaf))
                   (run (initConfigL vis inp loanEnv core)))
-            (I.probesFor vis :: [(String, StateV Cyclo)]))
+            (C.probesFor vis :: [(String, StateV Cyclo)]))
         withBlocks
   total <- readIORef totalRef
   agree <- readIORef agreeRef

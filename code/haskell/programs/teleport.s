@@ -1,5 +1,7 @@
 -- teleport.s: teleportation of |+> = H|0> onto the input register b, which the caller
--- supplies in |0>. Two lifts select the corrections before the two drops.
+-- supplies in |0>; two lifts,
+-- classically controlled corrections, two drops.  Token-identical to the
+-- listing in the paper's two programs of the measurement section (sec:meas:programs).
 --
 -- Sites: drop m and drop a (depth 2).  Expected: SAFE at all four records,
 -- each on a definite basis line -- (1,0) or (0,1) by record.

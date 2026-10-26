@@ -1,28 +1,31 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
--- |
--- Module      : Drop.Bridge
+-- Drop.Bridge: the matrix checker and the state-vector checker, run against each other.
 --
--- The cross-check of the implementation section: the theory layer builds the denotation as
--- a matrix and takes an exact rank; the language layer instead tests
--- @dim + 1@ inputs and compares lines.  The two decision procedures share no
--- code.  They do share a backend: the orphan instances below run the
--- language layer, which is polymorphic over @(Eq a, Fractional a)@, at the
--- theory layer's exact scalar field @K@, so the comparison holds arithmetic
--- and equality fixed and varies only the algorithm.  That is what the paper
--- claims and it is less than two wholly independent implementations.
+-- Question: Do the two checkers of this package, which reach a drop's verdict by different algorithms,
+--           agree on every program of the matrix checker's catalogue?
+-- Answer:   The matrix checker (Drop.Theory) builds the site map as a matrix and takes an exact rank; the
+--           state-vector checker (Drop.Lang) tests dim + 1 inputs and compares lines. toS translates a
+--           program of the matrix checker's syntax into the state-vector checker's, bridgeVerdict runs the
+--           state-vector checker on it, and bridgeAgrees compares its verdict with the matrix checker's
+--           by name. bridgeDisagreements lists the catalogue programs where they differ, and must be
+--           empty. The two share the scalar field K (the orphan instances below run the state-vector
+--           checker, which is polymorphic over a fractional field, at K), so the comparison holds
+--           arithmetic and equality fixed and varies only the algorithm. residualAgreesWithItsCriterion is
+--           a separate check inside the matrix checker: on the two lifted programs, its per-record table
+--           agrees with its own criterion at every record and has an entry for every record.
+-- Paper:    sec:eval (the implementation), app:implementation (the finite checks).
+-- Shapes:   SProgram   a program of the state-vector checker: the visible frame, the statements, and the
+--                      name of the temporary the drop is about.
+
 module Drop.Bridge
   ( -- * Translation
     toS
   , SProgram(..)
-    -- * The two vocabularies
-  , verdictDictionary
     -- * Cross-checking the two implementations
-  , bridgeVerdict
-  , bridgeAgrees
   , bridgeReport
   , bridgeDisagreements
-    -- * Cross-checking the two runtime checks
-  , residualAgreesAcrossEngines
+    -- * Cross-checking the per-record table against its criterion
+  , residualAgreesWithItsCriterion
   , residualBridgeReport
   ) where
 
@@ -37,9 +40,9 @@ import Drop.Theory.Lifted (LProgram(..), checkLProgram, ltDepth)
 import Drop.Theory.Lifted.Programs (liftedWitness, liftedWitnessNoRead)
 import Drop.Theory.Residual (ResidualTable(..), residualAgrees, residualCheck)
 
-import qualified Drop.Lang.Interp as SI
-import qualified Drop.Lang.Ring as SR
-import qualified Drop.Lang.Syntax as SS
+import qualified Drop.Lang.Criterion as SC
+import qualified Drop.Lang.Scalar as SR
+import qualified Drop.Lang.Flat as SS
 
 -- One Scalar Field, Two Implementations
 
@@ -57,23 +60,45 @@ instance Num K where
   fromInteger = fromInt
   abs x
     | kIsReal x = if krealCompare x kzero == LT then kneg x else x
+    -- refusal: abs of a non-real element
     | otherwise = error "Drop.Bridge: abs of a non-real element of the field"
   signum x
     | kIsZero x   = kzero
     | kIsReal x   = if krealCompare x kzero == LT then kneg kone else kone
+    -- refusal: signum of a non-real element
     | otherwise   = error "Drop.Bridge: signum of a non-real element of the field"
+
+-- >>> 2 + 3 * 4 :: K
+-- 14
+-- >>> (abs (-2) :: K, signum (-2) :: K, signum 0 :: K)
+-- (2,-1,0)
+-- >>> abs (kmul kimag kimag) :: K
+-- 1
 
 instance Fractional K where
   recip        = kinv
   fromRational = fromRat
+
+-- >>> 1 / 3 :: K
+-- 1/3
+-- >>> 0.5 :: K
+-- 1/2
 
 -- | Conjugation sends @w@ to @w^{-1}@; "Drop.Theory.Algebra.Scalar" already has it as
 -- 'kconj', and the language implementation's probability sites all go through it.
 instance SR.Conj K where
   conj = kconj
 
+-- >>> SR.conj kimag
+-- -1i
+-- >>> SR.conj kone
+-- 1
+
 instance SR.Amp K where
   showAmp = showK
+
+-- >>> SR.showAmp (kdiv kone ktwo)
+-- "1/2"
 
 -- Translation
 
@@ -85,8 +110,12 @@ data SProgram = SProgram
   , spTarget :: String
   }
 
+-- >>> :m + Drop.Theory.Corpus.Examples
+-- >>> fmap (\sp -> (spVis sp, spTarget sp, length (spProg sp))) (toS spreadAndPark)
+-- Just ([("v",2)],"t",3)
+
 -- | Translate an affine "Drop.Theory.Program.Syntax" program into an imperative
--- "Drop.Lang.Syntax" one: names are consumed there but registers act in
+-- "Drop.Lang.Flat" one: names are consumed there but registers act in
 -- place here, so the translation is a renaming substitution.
 --
 -- Allocation index handled, not assumed away: @i0 /= 0@ gets a
@@ -118,6 +147,13 @@ toS p = case progTerm p of
     look sub x = maybe x id (lookup x sub)
     rename sub old new' = [ (if a == old then new' else a, b) | (a, b) <- sub ]
 
+-- A program the matrix checker accepts has a translation; one it refuses has none.
+-- >>> :m + Drop.Theory.Corpus.Examples
+-- >>> fmap (\sp -> (spVis sp, spTarget sp, length (spProg sp))) (toS spreadAndRead)
+-- Just ([("v",2)],"t",4)
+-- >>> fmap (const ()) (toS (Program "bare" "v" 2 (Ret "v")))
+-- Nothing
+
 -- | The permutation matrix exchanging basis states @i@ and @j@ of a @d@-dimensional
 -- register.  Its own inverse, and a legal gate.
 transposition :: Int -> Int -> Int -> Mat
@@ -129,46 +165,78 @@ transposition d i j =
            | otherwise = k
     entry r c = if r == swap c then kone else kzero
 
+-- >>> transposition 3 0 2
+-- [[0,0,1],[0,1,0],[1,0,0]]
+-- >>> transposition 2 0 0
+-- [[1,0],[0,1]]
+-- >>> :m + Drop.Theory.Algebra.Linear
+-- >>> matIsUnitary (transposition 4 1 3)
+-- True
+
 -- The Comparison
 
 -- | The language implementation's verdict on a program, reached by testing.
-bridgeVerdict :: Program -> Maybe SI.Verdict
+bridgeVerdict :: Program -> Maybe SC.Verdict
 bridgeVerdict p = do
   sp <- toS p
-  pure (SI.semanticVerdict (spVis sp) (spProg sp) (spTarget sp) [])
+  pure (SC.semanticVerdict (spVis sp) (spProg sp) (spTarget sp) [])
 
--- | The two vocabularies, side by side.  The layers now share the word for
--- two of the three verdicts (both say Safe, both say Unsafe); stating the
--- correspondence as data rather than burying it in a @case@ still means
--- there is one place to look and one place to change, for the one name that
--- does differ: theory's Vacuous and language's Unreachable are the same
--- verdict, no state so no obligation.
-verdictDictionary :: [(String, String)]
-verdictDictionary =
-  [ ("Safe",    "Safe")
-  , ("Unsafe",  "Unsafe")
-  , ("Vacuous", "Unreachable") ]
+-- >>> :m + Drop.Theory.Corpus.Examples
+-- >>> bridgeVerdict spreadAndPark
+-- Just Safe
+-- >>> bridgeVerdict spreadAndRead
+-- Just Unsafe
+-- >>> bridgeVerdict (Program "bare" "v" 2 (Ret "v"))
+-- Nothing
 
--- | The theory implementation's verdict, as the name the dictionary uses.
+-- | The theory implementation's verdict, as a name.
 theoryName :: Verdict -> String
 theoryName (Safe _)     = "Safe"
 theoryName (Unsafe _ _) = "Unsafe"
-theoryName Vacuous      = "Vacuous"
+theoryName Unreachable  = "Unreachable"
 
--- | The language implementation's verdict, as the name the dictionary uses.
-languageName :: SI.Verdict -> String
+-- >>> :m + Drop.Theory.Corpus.Examples
+-- >>> fmap (theoryName . verdict) (checkProgram spreadAndPark)
+-- Right "Safe"
+-- >>> fmap (theoryName . verdict) (checkProgram spreadAndRead)
+-- Right "Unsafe"
+-- >>> theoryName Unreachable
+-- "Unreachable"
+
+-- | The language implementation's verdict, as a name.  Both layers use the words
+-- Safe, Unsafe and Unreachable.
+languageName :: SC.Verdict -> String
 languageName = show
+
+-- >>> :m + Drop.Theory.Corpus.Examples
+-- >>> fmap languageName (bridgeVerdict spreadAndPark)
+-- Just "Safe"
+-- >>> fmap languageName (bridgeVerdict spreadAndRead)
+-- Just "Unsafe"
 
 -- | Do the two implementations agree on this program?
 bridgeAgrees :: Program -> Bool
 bridgeAgrees p = case (checkProgram p, bridgeVerdict p) of
-  (Right tp, Just sv) ->
-    lookup (theoryName (verdict tp)) verdictDictionary == Just (languageName sv)
+  (Right tp, Just sv) -> theoryName (verdict tp) == languageName sv
   _ -> False
+
+-- >>> :m + Drop.Theory.Corpus.Examples
+-- >>> bridgeAgrees spreadAndPark
+-- True
+-- >>> bridgeAgrees spreadAndRead
+-- True
+-- >>> bridgeAgrees (Program "bare" "v" 2 (Ret "v"))
+-- False
 
 -- | Every catalogue program on which the two implementations differ.  Must be empty.
 bridgeDisagreements :: [String]
 bridgeDisagreements = [ n | (n, p) <- catalogue, not (bridgeAgrees p) ]
+
+-- The catalogue has seventeen programs and the two checkers agree on all of them.
+-- >>> bridgeDisagreements
+-- []
+-- >>> length catalogue
+-- 17
 
 -- | The two verdicts, printed side by side as a table.
 bridgeReport :: String
@@ -186,27 +254,38 @@ bridgeReport = unlines $
       Right tp -> theoryName (verdict tp)
     language p = maybe "untranslatable" languageName (bridgeVerdict p)
 
--- The Second Cross-Check: Two Runtime Checks
+-- The first lines of the table, shown as strings.
+-- >>> mapM_ print (take 5 (lines bridgeReport))
+-- "  the theory engine builds K and takes a rank; the language engine probes"
+-- "  dim+1 inputs and compares lines. They must agree everywhere."
+-- ""
+-- "  program         theory engine       language engine"
+-- "  example-A       Safe                Safe"
+-- >>> length (lines bridgeReport)
+-- 23
 
--- | Two runtime checks, sharing no code: "Drop.Theory.Residual" over the lifted
--- calculus, "Drop.Lang.Pass" over the machine.
---
--- Each compares itself against its own criterion at every table entry;
--- this asks what those miss: do the two decline in the same places,
--- where a check is most easily wrong?
-residualAgreesAcrossEngines :: [(String, Bool, Bool)]
-residualAgreesAcrossEngines =
+-- The Table Against Its Criterion
+
+-- | The matrix checker's per-record table ("Drop.Theory.Residual"), on the two lifted
+-- programs: for each program, does the table agree with the matrix checker's own
+-- criterion at every record, and does it have an entry for every record?  A table
+-- that abstains does not agree.
+residualAgreesWithItsCriterion :: [(String, Bool, Bool)]
+residualAgreesWithItsCriterion =
   [ ( lLabel p
-    , decidesEverything p
-    , tableIsExhaustive p )
+    , agreesAtEveryRecord p
+    , hasEveryRecord p )
   | p <- [liftedWitness, liftedWitnessNoRead] ]
   where
-    decidesEverything p = case checkLProgram p of
+    agreesAtEveryRecord p = case checkLProgram p of
       Left _   -> False
       Right tp -> residualAgrees tp == Just []
-    tableIsExhaustive p = case checkLProgram p of
+    hasEveryRecord p = case checkLProgram p of
       Left _   -> False
       Right tp -> length (rtEntries (residualCheck tp)) == 2 ^ ltDepth tp
+
+-- >>> residualAgreesWithItsCriterion
+-- [("the witness: tilt, lift {0,1}, read under a vacuous conditional, drop",True,True),("the witness with the read deleted: tilt, lift, drop",True,True)]
 
 -- | The same two facts, printed.
 residualBridgeReport :: String
@@ -216,4 +295,15 @@ residualBridgeReport = unlines $
   , "" ]
   ++ [ "  " ++ lbl ++ "\n      agrees with the criterion everywhere : " ++ show a
        ++ "\n      table covers every measurement record       : " ++ show b
-     | (lbl, a, b) <- residualAgreesAcrossEngines ]
+     | (lbl, a, b) <- residualAgreesWithItsCriterion ]
+
+-- >>> mapM_ print (lines residualBridgeReport)
+-- "  the runtime check, checked twice over: it must agree with the criterion"
+-- "  at every entry, and its table must have an entry for every measurement record."
+-- ""
+-- "  the witness: tilt, lift {0,1}, read under a vacuous conditional, drop"
+-- "      agrees with the criterion everywhere : True"
+-- "      table covers every measurement record       : True"
+-- "  the witness with the read deleted: tilt, lift, drop"
+-- "      agrees with the criterion everywhere : True"
+-- "      table covers every measurement record       : True"

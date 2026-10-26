@@ -1,16 +1,20 @@
--- |
--- Module      : Drop.Theory.Corpus.Examples
+-- Drop.Theory.Corpus.Examples: the example programs of the matrix checker.
 --
--- The example programs of the theory layer: small programs, each a value of
--- type 'Program', typed, run, elaborated, judged and, when safe, rewritten
--- into the shape @sep(R, W)@. Each is built to make one point; 'catalogue'
--- lists them, and "Drop.Bridge" runs both engines over the list.
+-- Question: Which small programs does the matrix checker run, and what point does each make?
+-- Answer:   Each is a value of type Program. A straight-line program (straightLine) allocates a
+--           temporary, applies a list of gates, drops the temporary and returns the visible
+--           register. They include the worked programs (a), (b) and (c), the textbook algorithms
+--           (Deutsch-Jozsa, Bernstein-Vazirani, the Grover oracle, phase kickback), the separator
+--           pair copy;copy and cZ;copy, and the boundary pair compute-alone and do-nothing.
+--           catalogue lists seventeen of them under a name each, and byName finds one.
+-- Paper:    fig:programs-ab (programs (a) and (b)), sec:boundary (program (c)), sec:dj (Deutsch-Jozsa).
+-- Shapes:   catalogue   the (name, Program) pairs, in the order the reports print them.
+
 module Drop.Theory.Corpus.Examples
   ( -- * The example programs
     catalogue
   , byName
     -- * The three worked programs
-  , addTwiceNoRotate
   , spreadAndRead
   , spreadAndReadTwice
     -- * Programs (a), (b) and (c)
@@ -19,13 +23,7 @@ module Drop.Theory.Corpus.Examples
   , tiltThenRead
   , sepHX
     -- * Textbook algorithms
-  , deutschJozsa
-  , bernsteinVazirani
-  , groverOracleComputeUncompute
-  , czAfterSpread
     -- * The separator pair of the summary no-go
-  , copyThenCopy
-  , czThenCopy
     -- * The boundary witness for the contextual theorem
   , computeAlone
   , doNothing
@@ -54,6 +52,21 @@ straightLine lbl m d i0 gs =
           v' = "v" ++ show (n+1)
       in Act (t', v') g (t, v) (body (n+1) t' v' gs')
 
+-- Allocate, apply the gates in order, drop, return. Names are generated: t1, v1, t2, v2, ...
+-- >>> :m + Drop.Theory.Criterion Drop.Theory.Program.Typing
+-- >>> let word p = either show (takeWhile (`notElem` " ,") . show . verdict) (checkProgram p)
+-- >>> mapM_ print (lines (prettySugared (straightLine "two gates" 2 2 0 [gHt 2, gRead 2])))
+-- "-- two gates"
+-- "let t = new |0> in"
+-- "  t1 := H t;  v1 := v"
+-- "  (t2, v2) := READ(t1, v1)"
+-- "  drop t2;"
+-- "  return v2"
+-- >>> progLabel (straightLine "none" 2 2 0 [])
+-- "none"
+-- >>> word (straightLine "none" 2 2 0 [])
+-- "SAFE"
+
 -- The three worked programs
 
 -- | @
@@ -71,6 +84,12 @@ addTwiceNoRotate :: Program
 addTwiceNoRotate =
   straightLine "example (A): read twice, never rotate" 2 2 0 [gRead 2, gRead 2]
 
+-- Safe: the temporary stays on |0>, each read adds zero.
+-- >>> map show (gatesIn (progTerm addTwiceNoRotate))
+-- ["READ","READ"]
+-- >>> word addTwiceNoRotate
+-- "SAFE"
+
 -- | @
 -- let t = new |0> in
 --   t := H t;
@@ -85,6 +104,12 @@ addTwiceNoRotate =
 spreadAndRead :: Program
 spreadAndRead =
   straightLine "example (B) = program (b): spread and read" 2 2 0 [gHt 2, gRead 2]
+
+-- Unsafe: the read correlates the spread temporary with the visible bit.
+-- >>> map show (gatesIn (progTerm spreadAndRead))
+-- ["H","READ"]
+-- >>> word spreadAndRead
+-- "UNSAFE"
 
 -- | @
 -- let t = new |0> in
@@ -104,6 +129,12 @@ spreadAndReadTwice :: Program
 spreadAndReadTwice =
   straightLine "example (C): spread and read twice" 2 2 0 [gHt 2, gRead 2, gRead 2]
 
+-- Safe: at dimension two the two reads cancel.
+-- >>> word spreadAndReadTwice
+-- "SAFE"
+-- >>> fmap (fmap certParked . certificateOf) (checkProgram spreadAndReadTwice)
+-- Right (Just [sqrt2/2,sqrt2/2])
+
 -- Programs (a), (b) and (c)
 
 -- | Program (a): rotate the temporary, never touch the visible register,
@@ -112,12 +143,23 @@ spreadAndReadTwice =
 spreadAndPark :: Program
 spreadAndPark = straightLine "program (a): spread and park" 2 2 0 [gHt 2]
 
+-- >>> word spreadAndPark
+-- "SAFE"
+-- >>> progLabel spreadAndPark
+-- "program (a): spread and park"
+
 -- | The two-gate program the introduction opens with: @H@ twice, then discard.
 -- @H H = I@, so the temporary is handed back exactly as allocated.  Safe, with
 -- the degenerate witness, and refused by a producer-based discipline, because
 -- the producer of the value is @H@.
 twoGateSilq :: Program
 twoGateSilq = straightLine "the two-gate Silq program: H, H, drop" 2 2 0 [gHt 2, gHt 2]
+
+-- H twice is the identity, so the temporary is handed back as allocated.
+-- >>> word twoGateSilq
+-- "SAFE"
+-- >>> fmap parkedLine (checkProgram twoGateSilq)
+-- Right (Just [1,0])
 
 -- | A program literally of the shape @sep(R, W)@: one gate on the
 -- temporary, one gate on the visible register, then the drop.
@@ -128,6 +170,11 @@ sepHX :: Program
 sepHX = straightLine "sep(H, X): literally of the separable shape" 2 2 0
           [gHt 2, onVis "X" 2 mX]
 
+-- >>> word sepHX
+-- "SAFE"
+-- >>> map gateKind (gatesIn (progTerm sepHX))
+-- [OnTmp,OnVis]
+
 -- | Program (c) without its measurement: tilt the three-dimensional
 -- temporary, then read. Unsafe as it stands; the measurement that makes
 -- the verdict depend on the run lives in "Drop.Theory.Lifted".
@@ -135,6 +182,11 @@ tiltThenRead :: Program
 tiltThenRead =
   straightLine "program (c), unlifted: tilt then read" 3 3 0
     [gTiltT 3, gRead 3]
+
+-- >>> word tiltThenRead
+-- "UNSAFE"
+-- >>> map show (gatesIn (progTerm tiltThenRead))
+-- ["tilt","READ"]
 
 -- Textbook algorithms
 
@@ -162,6 +214,14 @@ deutschJozsa f =
                                  v = k `mod` 2
                              in (if fn v == 1 then 1 - t else t) * 2 + v)
 
+-- A constant and a balanced function: both safe.
+-- >>> word (deutschJozsa (const 0))
+-- "SAFE"
+-- >>> word (deutschJozsa id)
+-- "SAFE"
+-- >>> progLabel (deutschJozsa id)
+-- "Deutsch-Jozsa, f = [0,1]"
+
 -- | Bernstein-Vazirani at one hidden bit: the same shape, with @W = X^s@.
 bernsteinVazirani :: Int -> Program
 bernsteinVazirani s =
@@ -175,6 +235,13 @@ bernsteinVazirani s =
                                  v = k `mod` 2
                              in (if sb * v `mod` 2 == 1 then 1 - t else t) * 2 + v)
 
+-- >>> word (bernsteinVazirani 0)
+-- "SAFE"
+-- >>> word (bernsteinVazirani 1)
+-- "SAFE"
+-- >>> progLabel (bernsteinVazirani 1)
+-- "Bernstein-Vazirani, s = 1"
+
 -- | The compute-uncompute pattern: entangle the temporary with the visible
 -- register, do visible work, run the entangling gate backwards.
 --
@@ -185,6 +252,11 @@ groverOracleComputeUncompute :: Program
 groverOracleComputeUncompute =
   straightLine "Grover oracle, compute-uncompute" 2 2 0
     [ gCompute, gZt 2, gCompute ]
+
+-- >>> word groverOracleComputeUncompute
+-- "SAFE"
+-- >>> map show (gatesIn (progTerm groverOracleComputeUncompute))
+-- ["compute","Z","compute"]
 
 -- | Phase kickback, unsafe. Spread the temporary, then apply @cZ@:
 --
@@ -197,11 +269,20 @@ groverOracleComputeUncompute =
 czAfterSpread :: Program
 czAfterSpread = straightLine "phase kickback: spread, then cZ" 2 2 0 [gHt 2, gCZ]
 
+-- The state factors at every input, yet the drop is unsafe.
+-- >>> word czAfterSpread
+-- "UNSAFE"
+
 -- The separator pair
 
 -- | @copy ; copy@: safe.  Two @CNOT@s compose to the identity.
 copyThenCopy :: Program
 copyThenCopy = borrowed "copy ; copy" [gCopy, gCopy]
+
+-- >>> word copyThenCopy
+-- "SAFE"
+-- >>> map show (gatesIn (progTerm copyThenCopy))
+-- ["H","copy","copy"]
 
 -- | @cZ ; copy@: unsafe. Same input-to-basis-state correspondence as
 -- @copy ; copy@ (both leave the temporary on its own basis state per
@@ -210,11 +291,22 @@ copyThenCopy = borrowed "copy ; copy" [gCopy, gCopy]
 czThenCopy :: Program
 czThenCopy = borrowed "cZ ; copy" [gCZ, gCopy]
 
+-- The same input-to-basis-state map as copy;copy, but not safe.
+-- >>> word czThenCopy
+-- "UNSAFE"
+-- >>> map show (gatesIn (progTerm czThenCopy))
+-- ["H","cZ","copy"]
+
 -- | The separator pair lends the temporary in the balanced state, so the
 -- allocation is followed by an @H@ on the temporary: in a calculus whose @new@
 -- allocates a basis state, preparing the balanced state is one gate.
 borrowed :: String -> [Gate] -> Program
 borrowed lbl gs = straightLine lbl 2 2 0 (gHt 2 : gs)
+
+-- >>> map show (gatesIn (progTerm (borrowed "x" [gCZ])))
+-- ["H","cZ"]
+-- >>> word (borrowed "x" [])
+-- "SAFE"
 
 -- The boundary witness: why right extension is necessary
 
@@ -227,12 +319,24 @@ borrowed lbl gs = straightLine lbl 2 2 0 (gHt 2 : gs)
 computeAlone :: Program
 computeAlone = straightLine "compute alone (copy the visible register)" 2 2 0 [gCompute]
 
+-- >>> word computeAlone
+-- "UNSAFE"
+-- >>> :m + Drop.Theory.Criterion.Gram Drop.Theory.Program.Elaborate
+-- >>> fmap (\tp -> sliceRank (tpTmpDim tp) (tpVisDim tp) (coreMap tp)) (checkProgram computeAlone)
+-- Right 2
+
 -- | @let t = new |0> in drop t; v@, written with two identity gates so that it
 -- is literally of the shape @sep(1, 1)@.  The separable program the previous one
 -- cannot be told apart from, without a mixing continuation.
 doNothing :: Program
 doNothing = straightLine "sep(1,1): allocate and drop" 2 2 0
               [onTmp "1" (mId 2) 2, gIdent 2 2]
+
+-- >>> word doNothing
+-- "SAFE"
+-- >>> :m + Drop.Theory.Criterion.Witness
+-- >>> inSepShape doNothing
+-- True
 
 -- The catalogue
 
@@ -257,5 +361,18 @@ catalogue =
   , ("do-nothing",      doNothing)
   ]
 
+-- Seventeen programs, in the order the reports print them.
+-- >>> length catalogue
+-- 17
+-- >>> map fst catalogue
+-- ["example-A","example-B","example-C","park","silq-two-gate","tilt-read","in-shape","dj-constant","dj-balanced","bv-0","bv-1","grover-oracle","kickback","copy-copy","cz-copy","compute-alone","do-nothing"]
+-- >>> map (word . snd) catalogue
+-- ["SAFE","UNSAFE","SAFE","SAFE","SAFE","UNSAFE","SAFE","SAFE","SAFE","SAFE","SAFE","SAFE","UNSAFE","SAFE","UNSAFE","UNSAFE","SAFE"]
+
 byName :: String -> Maybe Program
 byName n = lookup n catalogue
+
+-- >>> fmap progLabel (byName "silq-two-gate")
+-- Just "the two-gate Silq program: H, H, drop"
+-- >>> fmap progLabel (byName "nonsense")
+-- Nothing

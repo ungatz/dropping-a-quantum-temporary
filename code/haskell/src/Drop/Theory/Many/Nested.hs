@@ -1,15 +1,26 @@
--- |
--- Module      : Drop.Theory.Many.Nested
+-- Drop.Theory.Many.Nested: when a safe bundle can be prepared one temporary at a time.
 --
--- A nested witness prepares each temporary of a program with its own gate;
--- a composite witness instead needs one temporary of dimension
--- @d_1 * ... * d_n@, not a program of the surface language.
+-- Question: A program with several temporaries is safe as a bundle. Is each temporary prepared by a gate
+--           of its own, and over which ring of scalars?
+-- Answer:   parkedState reads off the vector g the bundle is left on (Nothing when the bundle is unsafe:
+--           level 1). parkedFactors splits g into one vector for each temporary, one cut at a time
+--           (Nothing when g is entangled across them: level 2). nestedWitness takes a gate ring (zHalf, or
+--           qOmega, the field this package computes in) and, for each factor, asks whether its ray carries
+--           a unit vector over the ring (rayCarriesUnitVector) and builds the real reflection that carries
+--           the temporary's allocation state to it; a ray with no such vector over the ring is level 3. A
+--           failure is a NestedReason. checkNestedWitness checks the gates are unitary and prepare
+--           the factors. bundledWitnessExists asks whether one gate on the whole bundle does the same.
+--           truncateAtDrop, wireSafeAtDropSite and dropOrderIsIrrelevant check that a wire's verdict does not
+--           depend on where its drop stands. bellPair (level 2), irreduciblyJoint (level 3) and
+--           reduciblyJoint (a witness exists) are one program for each outcome; nestedReport prints them.
+-- Paper:    sec:factor (a tuple drop is one site); the paper does not state the gate rings.
+-- Shapes:   GateRing        a name, membership in the ring, and a unit vector on a ray over the ring if there is one.
+--           NestedWitness   a unit vector, a gate preparing it and a visible matrix, for each temporary.
+--           NestedReason    why there is no nested witness: a level of the trichotomy, or a failing hypothesis.
+
 module Drop.Theory.Many.Nested
-  ( -- * The constant state and its factors
-    parkedState
-  , parkedFactors
-    -- * The nested witness
-  , NestedWitness(..)
+  ( -- * The nested witness
+    NestedWitness(..)
   , NestedReason(..)
     -- * Gate rings and the norm condition
   , GateRing(..)
@@ -20,7 +31,6 @@ module Drop.Theory.Many.Nested
   , bundledWitnessExists
     -- * The drop-order lemma, mechanised
   , truncateAtDrop
-  , wireSafeAtDropSite
   , dropOrderIsIrrelevant
     -- * The trichotomy, inhabited
   , irreduciblyJoint
@@ -58,6 +68,7 @@ parkedState :: MProgram -> Either BundleError (Maybe Vec)
 parkedState p = do
   b <- bundle p
   case checkProgram b of
+    -- impossible: bundle has already run scopeCheck, which states the premises the core checker needs
     Left e   -> error ("Drop.Theory.Many.Nested.parkedState: bundled program ill-typed: "
                        ++ show e)
     Right tp
@@ -70,12 +81,21 @@ parkedState p = do
               col  = matVec (coreMap tp) (vbasis m 0)
           in pure (splitLeft <$> factorSplit dims [0] col)
 
+-- The bundle of the Bell pair is left on the Bell state; an unsafe bundle has no state.
+-- >>> let hh = MProgram "two Hadamards" "v" 2 [MNew "a" 2 0, MNew "b" 2 0, MApply "H" mH ["a"], MApply "H" mH ["b"], MDrop "a", MDrop "b"]
+-- >>> parkedState bellPair
+-- Right (Just [sqrt2/2,0,0,sqrt2/2])
+-- >>> parkedState hh
+-- Right (Just [1/2,1/2,1/2,1/2])
+-- >>> parkedState (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "H" mH ["a"], MApply "CX" mCX ["a", "v"], MDrop "a"])
+-- Right Nothing
+
 -- | The per-temporary factors of the constant state, when it is a full
 -- product across the partition of temporaries.
 --
 -- @Nothing@ covers levels 1 and 2 together (unsafe or safe-but-entangled);
--- 'parkedState' tells them apart. Each factor is normalised to a @1@ in
--- its first nonzero coordinate, a canonical ray representative.
+-- 'parkedState' tells them apart. Each factor is on its own ray, as the split
+-- returns it (a column of a coefficient matrix), so it is not scaled.
 parkedFactors :: MProgram -> Either BundleError (Maybe [Vec])
 parkedFactors p = do
   mg <- parkedState p
@@ -95,6 +115,15 @@ parkedFactors p = do
       rest <- peel ds (splitRight s)
       pure (splitLeft s : rest)
 
+-- The Bell state does not factor across its two qubits; two Hadamards leave a product.
+-- >>> let hh = MProgram "two Hadamards" "v" 2 [MNew "a" 2 0, MNew "b" 2 0, MApply "H" mH ["a"], MApply "H" mH ["b"], MDrop "a", MDrop "b"]
+-- >>> parkedFactors bellPair
+-- Right Nothing
+-- >>> parkedFactors hh
+-- Right (Just [[1/2,1/2],[1,1]])
+-- >>> parkedFactors (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "H" mH ["a"], MApply "CX" mCX ["a", "v"], MDrop "a"])
+-- Right Nothing
+
 -- Gate Rings And The Norm Condition
 
 -- | A gate ring, for the one question this module asks: given a ray, does
@@ -111,9 +140,14 @@ data GateRing = GateRing
       -- ^ a unit vector over the ring on the given ray, if there is one
   }
 
+-- >>> (ringName zHalf, ringHas zHalf kone, ringHas zHalf kimag)
+-- ("Z[1/2]",True,False)
+-- >>> (ringName qOmega, ringHas qOmega kimag)
+-- ("Q(w)",True)
+
 -- | @Z[1/2]@: real, dyadic, no @i@ and no @sqrt2@. A unit vector on @[g]@
--- needs real @lambda@ with @lambda^2 ||g||^2 = 1@: here, and only here,
--- the condition is a square root of a dyadic rational.
+-- needs a real @lambda@ with @lambda^2 ||g||^2 = 1@, a square root of a
+-- dyadic rational.
 zHalf :: GateRing
 zHalf = GateRing "Z[1/2]" inZHalf f
   where
@@ -126,6 +160,14 @@ zHalf = GateRing "Z[1/2]" inZHalf f
         then Just (map (kmul (fromRat lam)) g) else Nothing
     isDyadic q = let d = Data.Ratio.denominator q in d > 0 && (d .&. (d - 1)) == 0
     inZHalf k = maybe False isDyadic (kToRational k)
+
+-- One half is in Z[1/2]; one third and i are not.
+-- >>> map (ringHas zHalf) [kdiv kone ktwo, kdiv kone (fromInt 3), kimag]
+-- [True,False,False]
+-- >>> rayCarriesUnitVector zHalf [kone, kone, kone, kone]
+-- Just [1/2,1/2,1/2,1/2]
+-- >>> rayCarriesUnitVector zHalf [kone, kone]
+-- Nothing
 
 -- | @Q(w)@, the field this package computes in. A phase is available, so
 -- the condition is the norm equation, settled by a bounded search over
@@ -149,9 +191,25 @@ qOmega = GateRing "Q(w)" (const True) f
       , (a, b, c, d) /= (0, 0, 0, 0) ]
     rng = [-2 .. 2 :: Int]
 
+-- Every scalar of Q(w) is in the ring; the ray (1,1) carries a unit vector there.
+-- >>> map (ringHas qOmega) [kdiv kone ktwo, kimag]
+-- [True,True]
+-- >>> rayCarriesUnitVector qOmega [kone, kone]
+-- Just [(-1/2 + -1/2w^2),(-1/2 + -1/2w^2)]
+-- >>> rayCarriesUnitVector qOmega [kone, kzero]
+-- Just [-1,0]
+
 -- | Does the ray through @g@ carry a unit vector over the ring?
 rayCarriesUnitVector :: GateRing -> Vec -> Maybe Vec
 rayCarriesUnitVector = ringUnitOnRay
+
+-- The ray (1,1,1) needs a phase: its unit vector has entries (-1 - w - w^3)/3.
+-- >>> rayCarriesUnitVector zHalf [kone, kone]
+-- Nothing
+-- >>> fmap vnorm2 (rayCarriesUnitVector qOmega [kone, kone, kone])
+-- Just 1
+-- >>> fmap (map (kmul (fromInt 3))) (rayCarriesUnitVector qOmega [kone, kone, kone])
+-- Just [(-1 + -1w + -1w^3),(-1 + -1w + -1w^3),(-1 + -1w + -1w^3)]
 
 -- The Nested Witness
 
@@ -162,6 +220,11 @@ data NestedWitness = NestedWitness
   , nwPrepare :: [Mat]  -- ^ @R_1 .. R_n@, each a gate on that temporary alone
   , nwVisible :: Mat    -- ^ @W@
   }
+
+-- >>> :m + Drop.Theory.Program.Gates
+-- >>> let xx = MProgram "two flips" "v" 2 [MNew "a" 2 0, MNew "b" 2 0, MApply "X" mX ["a"], MApply "X" mX ["b"], MDrop "a", MDrop "b"]
+-- >>> either (const ([], [], [])) (\w -> (nwFactors w, nwPrepare w, nwVisible w)) (nestedWitness zHalf xx)
+-- ([[0,1],[0,1]],[[[0,1],[1,0]],[[0,1],[1,0]]],[[1,0],[0,1]])
 
 -- | Why no nested witness exists.  Each constructor is a level of the
 -- trichotomy or a hypothesis failing out loud.
@@ -188,6 +251,21 @@ data NestedReason
   | FactorReflectionFailed Int Reason
       -- ^ the per-temporary Householder construction failed for temporary @k@.
   deriving (Show)
+
+-- The reasons print as constructors. The last failure: a unit vector over Z[1/2] whose preparing reflection leaves the ring.
+-- >>> let u = map (\n -> kdiv (fromInt n) (fromInt 4)) [1, 3, 2, 1, 1]
+-- >>> NotJointlySafe
+-- NotJointlySafe
+-- >>> ParkedIsEntangled
+-- ParkedIsEntangled
+-- >>> FactorRayCarriesNoUnitVector 0 "Z[1/2]" kone
+-- FactorRayCarriesNoUnitVector 0 "Z[1/2]" 1
+-- >>> FactorPreparationNotReal 1
+-- FactorPreparationNotReal 1
+-- >>> (all (ringHas zHalf) u, vnorm2 u)
+-- (True,1)
+-- >>> fmap (filter (not . ringHas zHalf) . concat) (householder 5 0 u)
+-- Right [2/3,-1/6,-1/6,-1/6,11/12,-1/12,-1/6,-1/12,11/12]
 
 -- | Build the nested witness, or say which level of the trichotomy the
 -- program sits at.
@@ -225,6 +303,21 @@ nestedWitness ring p = do
                     Left (FactorPreparationNotOverRing k (ringName ring))
                 | otherwise -> Right (u, m)
 
+-- The three outcomes over Z[1/2] on the smallest programs: no bundle state, an entangled one, a ray with no unit vector; and a witness for two flipped qubits.
+-- >>> :m + Drop.Theory.Program.Gates
+-- >>> let xx = MProgram "two flips" "v" 2 [MNew "a" 2 0, MNew "b" 2 0, MApply "X" mX ["a"], MApply "X" mX ["b"], MDrop "a", MDrop "b"]
+-- >>> let hh = MProgram "two Hadamards" "v" 2 [MNew "a" 2 0, MNew "b" 2 0, MApply "H" mH ["a"], MApply "H" mH ["b"], MDrop "a", MDrop "b"]
+-- >>> either show (const "witness") (nestedWitness zHalf (MProgram "p" "v" 2 [MNew "a" 2 0, MApply "H" mH ["a"], MApply "CX" mCX ["a", "v"], MDrop "a"]))
+-- "NotJointlySafe"
+-- >>> either show (const "witness") (nestedWitness zHalf bellPair)
+-- "ParkedIsEntangled"
+-- >>> either show (const "witness") (nestedWitness zHalf irreduciblyJoint)
+-- "FactorRayCarriesNoUnitVector 0 \"Z[1/2]\" 1/2"
+-- >>> either show (const "witness") (nestedWitness zHalf xx)
+-- "witness"
+-- >>> either show (const "witness") (nestedWitness qOmega hh)
+-- "FactorPreparationNotReal 0"
+
 -- | Independent re-check: every preparation gate is unitary, and applying it to
 -- its own allocation basis vector reproduces that temporary's factor.
 checkNestedWitness :: MProgram -> NestedWitness -> Bool
@@ -239,6 +332,14 @@ checkNestedWitness p w =
     zip4 (a:as) (b:bs) (c:cs) (d:ds) = (a,b,c,d) : zip4 as bs cs ds
     zip4 _ _ _ _ = []
 
+-- The witness for two flipped qubits passes; the same gates do not prepare a program of another shape.
+-- >>> :m + Drop.Theory.Program.Gates
+-- >>> let xx = MProgram "two flips" "v" 2 [MNew "a" 2 0, MNew "b" 2 0, MApply "X" mX ["a"], MApply "X" mX ["b"], MDrop "a", MDrop "b"]
+-- >>> either (const False) (checkNestedWitness xx) (nestedWitness zHalf xx)
+-- True
+-- >>> either (const False) (checkNestedWitness (MProgram "p" "v" 2 [MNew "a" 2 0, MDrop "a"])) (nestedWitness zHalf xx)
+-- False
+
 -- | Does the composite witness exist?  This is 'Drop.Theory.Criterion.Witness.synthesize' on
 -- the composite program; at level 3 it is 'True' while 'nestedWitness'
 -- fails.
@@ -246,8 +347,15 @@ bundledWitnessExists :: MProgram -> Either BundleError Bool
 bundledWitnessExists p = do
   b <- bundle p
   case checkProgram b of
+    -- impossible: bundle has already run scopeCheck, which states the premises the core checker needs
     Left e   -> error ("Drop.Theory.Many.Nested.bundledWitnessExists: " ++ show e)
     Right tp -> pure (either (const False) (const True) (synthesize tp))
+
+-- A bundle can have a witness although its temporaries cannot be prepared one by one.
+-- >>> bundledWitnessExists irreduciblyJoint
+-- Right True
+-- >>> bundledWitnessExists bellPair
+-- Right True
 
 -- The Drop-Order Lemma, Made Executable
 
@@ -271,6 +379,13 @@ truncateAtDrop p t =
     isDropT (MDrop x) = x == t
     isDropT _         = False
 
+-- >>> fmap (length . mStmts) (truncateAtDrop interleavedDrops "a")
+-- Just 3
+-- >>> fmap mLabel (truncateAtDrop interleavedDrops "a")
+-- Just "drops interleaved: a is allocated, used and dropped before b exists  [truncated at drop a]"
+-- >>> fmap (length . mStmts) (truncateAtDrop interleavedDrops "z")
+-- Nothing
+
 -- | The per-temporary verdict for @t@ computed at its own drop site, by truncating
 -- the program there.
 wireSafeAtDropSite :: MProgram -> Name -> Either BundleError Bool
@@ -278,16 +393,29 @@ wireSafeAtDropSite p t = case truncateAtDrop p t of
   Nothing -> Left (NotAllDropped [t])
   Just q  -> wireSafe q t
 
+-- >>> wireSafeAtDropSite interleavedDrops "a"
+-- Right True
+-- >>> wireSafeAtDropSite bellPair "a"
+-- Right False
+-- >>> wireSafeAtDropSite bellPair "z"
+-- Left these temporaries are never dropped, so the program does not have the visible result type: ["z"]
+
 -- | The drop-order lemma, checked rather than argued: for every temporary,
 -- the verdict at its own drop site agrees with the verdict at the end.
 --
--- Not vacuous: 'bundle' ignores where a drop stands, so the two sides come
--- from different programs (truncated vs. whole); the affine discipline is
--- what forces agreement.
+-- The comparison is not trivial: 'bundle' ignores where a drop stands, so the
+-- two sides come from different programs (truncated and whole); the affine
+-- discipline is what forces agreement.
 dropOrderIsIrrelevant :: MProgram -> Bool
 dropOrderIsIrrelevant p =
+  -- refusal: a program that fails scopeCheck has no drop order to compare
   either (error . ("dropOrderIsIrrelevant: " ++) . show) (const True) (scopeCheck p) &&
   and [ wireSafeAtDropSite p t == wireSafe p t | (t, _, _) <- mTemporaries p ]
+
+-- >>> dropOrderIsIrrelevant interleavedDrops
+-- True
+-- >>> dropOrderIsIrrelevant bellPair
+-- True
 
 -- The Inhabitants
 
@@ -299,6 +427,14 @@ allOnesPrep d =
                  Right m -> m
                  Left _  -> matId d
     Nothing -> matId d
+
+-- The Householder reflection onto the all-ones ray; in dimension 3 the root of 3 is missing, so the identity stands in.
+-- >>> matColumn (allOnesPrep 4) 0
+-- [1/2,1/2,1/2,1/2]
+-- >>> matIsUnitary (allOnesPrep 4)
+-- True
+-- >>> allOnesPrep 3 == matId 3
+-- True
 
 -- | Two 3-dimensional temporaries prepared jointly on the all-ones ray of
 -- @H_9@: a square-root test gives the wrong answer here.
@@ -318,6 +454,9 @@ phaseBuysTheRoot = MProgram
       , MDrop "a"
       , MDrop "b" ]
   }
+
+-- >>> (mLabel phaseBuysTheRoot, mTemporaries phaseBuysTheRoot)
+-- ("two 3-level wires on the all-ones ray of H_9, where the phase pays",[("a",3,0),("b",3,0)])
 
 -- | Level 3, over @Z[1/2]@: two qubits, each put on the all-ones ray by
 -- its own Hadamard, visible register untouched.
@@ -340,13 +479,20 @@ irreduciblyJoint = MProgram
       [ MNew "a" 2 0
       , MNew "b" 2 0
       -- One joint gate: no gate over Z[1/2] puts a single qubit on the
-      -- all-ones ray (needs 1/sqrt2, and H is not over Z[1/2]; an earlier
-      -- version wrongly used two Hadamards). The 4x4 all-ones Householder
-      -- is over Z[1/2]: ||w||^2 = 1, every entry +-1/2.
+      -- all-ones ray (it needs 1/sqrt2, and H is not over Z[1/2]). The 4x4
+      -- all-ones Householder is over Z[1/2]: ||w||^2 = 1, every entry +-1/2.
       , MApply "R4" (allOnesPrep 4) ["a", "b"]
       , MDrop "a"
       , MDrop "b" ]
   }
+
+-- Over Z[1/2]: safe as a bundle, and the first wire's ray needs a root of 2.
+-- >>> (mLabel irreduciblyJoint, mTemporaries irreduciblyJoint)
+-- ("two qubits, one joint gate over Z[1/2]: bundle preparable, neither wire",[("a",2,0),("b",2,0)])
+-- >>> parkedFactors irreduciblyJoint
+-- Right (Just [[1/2,1/2],[1,1]])
+-- >>> jointSafe irreduciblyJoint
+-- Right True
 
 -- | The control: the same construction one dimension up, two 4-dimensional
 -- temporaries each on the all-ones ray.
@@ -367,6 +513,9 @@ reduciblyJoint = MProgram
       , MDrop "a"
       , MDrop "b" ]
   }
+
+-- >>> (mLabel reduciblyJoint, mTemporaries reduciblyJoint)
+-- ("two 4-level wires on the all-ones ray: the control, a nested witness exists",[("a",4,0),("b",4,0)])
 
 
 -- | A program whose drops are interleaved with the rest of the work: @a@
@@ -390,6 +539,11 @@ interleavedDrops = MProgram
       , MDrop "b" ]
   }
 
+-- >>> map (\s -> case s of { MNew {} -> "new"; MApply {} -> "apply"; MDrop {} -> "drop" }) (mStmts interleavedDrops)
+-- ["new","apply","drop","new","apply","apply","drop"]
+-- >>> jointSafe interleavedDrops
+-- Right True
+
 -- | A name allocated again after being dropped.
 --
 -- The calculus permits this, @new@ being the only resurrection, but composition
@@ -402,6 +556,9 @@ resurrectsAName = MProgram
   , mVis = "v", mVisDim = 2
   , mStmts = [ MNew "a" 2 0, MDrop "a", MNew "a" 2 0, MDrop "a" ] }
 
+-- >>> either show (const "ok") (scopeCheck resurrectsAName)
+-- "the name \"a\" is allocated again after being dropped; bundling gives each allocation its own factor, so rename the second one (alpha-conversion) and bundle again"
+
 -- | A gate applied to a temporary that was already dropped.
 usesAfterDrop :: MProgram
 usesAfterDrop = MProgram
@@ -409,12 +566,18 @@ usesAfterDrop = MProgram
   , mVis = "v", mVisDim = 2
   , mStmts = [ MNew "a" 2 0, MDrop "a", MApply "H" mH ["a"] ] }
 
+-- >>> either show (const "ok") (scopeCheck usesAfterDrop)
+-- "gate H names the temporary \"a\", which has already been dropped, and a dropped name is untouchable"
+
 -- | A gate applied to a temporary before it is allocated.
 gatesBeforeAlloc :: MProgram
 gatesBeforeAlloc = MProgram
   { mLabel = "probe: gate on a wire before it is allocated"
   , mVis = "v", mVisDim = 2
   , mStmts = [ MApply "H" mH ["a"], MNew "a" 2 0, MDrop "a" ] }
+
+-- >>> either show (const "ok") (scopeCheck gatesBeforeAlloc)
+-- "gate H names the temporary \"a\" before it is allocated"
 
 -- Reporting
 
@@ -471,3 +634,10 @@ nestedReport = unlines $
         ++ " reflections only, so no verdict"
       Left (NestedBundleError e)     -> "none: " ++ show e
       Left r                         -> "none: " ++ show r
+
+-- The first lines of the report, shown as strings.
+-- >>> mapM_ print (take 4 (lines nestedReport))
+-- "nested allocation: does the witness survive the nesting?"
+-- ""
+-- "  The bundle settles the verdict, not the witness: a bundled witness has"
+-- "  one temporary of dimension d_1 * ... * d_n, which is not a program of"

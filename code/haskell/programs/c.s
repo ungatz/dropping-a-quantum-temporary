@@ -1,9 +1,8 @@
--- c.s: program (c). It allocates a temporary, applies H to the visible
--- register, copies it into the temporary, measures whether the temporary
--- landed on |0>, applies V, and drops. The declaration below specifies V.
---
--- V is the real orthogonal gate fixing |00>, sending |10> to |11> and |01>,
--- |11> to (|01> -+ |10>)/sqrt2, the temporary written first.
+-- Program (c), with the data register named q. After H on q, it copies q
+-- into a temporary, measures the temporary, applies V, and drops it.
+-- With the temporary first, V fixes |00>, sends |10> to |11>,
+-- and sends |01> and |11> to (|01> - |10>)/sqrt2 and
+-- (|01> + |10>)/sqrt2, respectively.
 --
 -- Site: drop t (depth 1).  Expected: record 1 (t landed on |0>): SAFE,
 -- certificate (1,0).  Record 0: UNSAFE.

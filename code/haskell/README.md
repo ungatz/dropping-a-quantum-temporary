@@ -1,56 +1,42 @@
-# DQT checker and compiler
+# dqt
 
-This package contains a typed language for quantum programs with temporary
-registers. It checks when a register may be dropped, runs the programs, and
-compiles a supported subset to OpenQASM 3.
+The language of the paper in Haskell: its type checker, its machine, the drop checker and the
+compiler to OpenQASM 3. Two checkers decide each drop by different algorithms, one on state
+vectors (`src/Drop/Lang/`) and one on matrices (`src/Drop/Theory/`); `src/Drop/Bridge.hs`
+compares them. All arithmetic is exact. The library needs only `base` and `containers`.
 
-## Run it
-
-From this directory:
-
-```sh
-cabal test all
-cabal run dqt -- list
-cabal run dqt -- typecheck programs/dj.s
-cabal run dqt -- run programs/mcx-dirty.s
-cabal run dqt -- compile programs/dj.s
+```
+cabal test                                 # the five test suites
+cabal run dqt                              # the list of commands
+cabal run dqt -- run programs/temp-and.s   # run one program and judge its drops
+cabal run dqt -- compile programs/dj.s     # compile one program to OpenQASM 3
+cabal run dqt -- all                       # every report
+python3 check-examples.py                  # run the examples in the comments
 ```
 
-`list` shows the theory examples. `typecheck`, `run`, and `compile` accept a
-`.s` file. `compile` writes OpenQASM 3 to standard output. `cabal test all`
-runs the four test suites. The compiler suite writes `.qasm` circuits and leaf
-data to the sibling `../qasm3/out-typed/` directory.
+In the REPL (`cabal repl lib:dqt`):
 
-The language syntax and examples are in [`programs/SYNTAX.md`](programs/SYNTAX.md)
-and [`programs/`](programs/).
+```haskell
+import Drop.Lang.Report.Run
+import Drop.Lang.Report.Trace
+import Drop.Lang.Report.Explain
+runFile "programs/temp-and.s"              -- the verdict at each drop, per record
+typecheckFile "programs/dj.s"              -- the type
+compileFile "programs/a-then-u.s"          -- OpenQASM 3
+traceFile "programs/temp-and.s" Nothing    -- the run, frame by frame
+passFile "programs/rus.s"                  -- the static pass, stage by stage
+```
 
-## What the checks establish
+`:m *Drop.Lang.Criterion` opens any module; most definitions are followed by
+`-- >>>` examples that can be pasted as they are.
 
-The theory route constructs site maps and checks Kraus-block proportionality
-with exact linear algebra over algebraic numbers. The language route probes
-the typed execution at each drop site. The bridge compares those verdicts;
-the routes use distinct procedures but share arithmetic through the bridge.
-The four Haskell suites check the theory examples, language semantics, compiler,
-and refusal of malformed typed programs.
-
-The OpenQASM checker in `../qasm3/` parses emitted circuits with the
-`openqasm3` reference parser, simulates every tested input and measurement
-branch, and compares the result numerically with the Haskell leaf data. It also
-checks that each output bit reads the corresponding returned qubit. This is a
-numerical comparison of generated circuits; it is not hardware execution or a
-physical qubit-reuse allocator.
-
-## Compiler assumptions and diagnostics
-
-The emitted circuit assumes fresh qubits start in `|0⟩`; visible input qubits
-carry the caller's input state. A non-basis `new` state is reported as
-`preparation of psi assumed (not emitted)`: the compiler does not synthesize
-that preparation. A safe site outside its lowering support is reported as
-`not emitted`. An unsafe drop is marked `dropped unsafe`. A successful process
-exit alone does not certify that every dropped register was returned.
-Reclaiming ordinary inputs is unsupported: the checker can find a fixed final
-state, but those inputs have no declared state to restore.
-
-The verdict and certificate calculations use exact arithmetic. OpenQASM gate
-angles can require decimal approximations, and the separate circuit comparison
-uses a numerical tolerance.
+```
+src/Drop/Lang/      the language: syntax, types, machine, drop checker, parser, compiler
+src/Drop/Theory/    the matrix checker
+src/Drop/Bridge.hs  the comparison of the two
+app/Main.hs         the dqt command
+test/               the test suites
+programs/           the example programs; the grammar is programs/SYNTAX.md
+examples/paper/     the other programs the paper prints, and one non-basis allocation
+EMITTER.md          how the compiler emits a drop
+```
