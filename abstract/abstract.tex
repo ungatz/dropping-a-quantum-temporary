@@ -7,7 +7,7 @@
 
 \settopmatter{printacmref=false, printfolios=true}
 \setcopyright{none}
-\setlength{\intextsep}{4pt plus 2pt minus 1pt}
+\setlength{\intextsep}{1pt plus 1pt minus 1pt}
 \setlength{\textfloatsep}{4pt plus 2pt minus 1pt}
 \setlength{\floatsep}{4pt plus 2pt minus 1pt}
 \captionsetup{skip=3pt}
@@ -19,176 +19,162 @@
 \raggedbottom
 \setlength{\parskip}{0pt}
 
-\title{Safe to Drop: an Exact Criterion for Quantum Temporaries}
+\title{Drop, Reflect and Reuse a Quantum Temporary}
 
 \author{Anonymous}
 
 \begin{abstract}
-  We specify a safe quantum drop by observational equivalence to a program
-  that prepares the dropped block independently of the rest, comparing
-  all registers jointly just before the drop, with earlier drops deleted.
-  With every unitary available
-  as a gate, we show that drop safety is
-  equivalent to restoration by one unitary on the dropped block alone.
-  Without measurement, a drop of temporaries is safe exactly when one fixed pure state of
-  the block, a single state vector, serves every input. With measurement, the
-  criterion applies to each measurement record separately,
-  for all inputs, keeping the weight with which the record occurs. We
-  also consider loans, where the witness receives the unknown borrowed
-  input instead of preparing a fixed state. Our
-  restricted compiler computes numerical return gates and reuses wires,
-  tested by independent simulation.
+  Compilers often uncompute a temporary before reusing it,
+    running its gates backwards. We ask instead what the temporary
+    ends as. A drop is safe when, just before it, no observer can
+    tell the program from one that prepared the temporary without the
+    input. This holds exactly when the temporary ends in one fixed
+    pure state for every input, and then one gate on it alone
+    restores its starting state. The test extends to each sequence of
+    measurement outcomes with its weight and to borrowed registers. A
+    prototype compiler computes the gate and reuses the freed wire.
 \end{abstract}
 
 \maketitle
 
-\setlength{\abovedisplayskip}{4pt plus 2pt minus 1pt}
-\setlength{\belowdisplayskip}{4pt plus 2pt minus 1pt}
-\setlength{\abovedisplayshortskip}{4pt plus 1pt}
-\setlength{\belowdisplayshortskip}{4pt plus 1pt}
+\setlength{\abovedisplayskip}{2pt plus 1pt minus 1pt}
+\setlength{\belowdisplayskip}{2pt plus 1pt minus 1pt}
+\setlength{\abovedisplayshortskip}{2pt plus 1pt}
+\setlength{\belowdisplayshortskip}{2pt plus 1pt}
+\newcommand{\luafig}{\ifdefined\directlua -lua\fi}
 \binoppenalty=10000
 \relpenalty=10000
 
 \section{Specifying a safe drop}\label{sec:problem}
 
-We want to reuse temporary registers when their lifetimes end, as we
-do classically by discarding their values. A unitary quantum subroutine cannot reset, but its gates
-are reversible, so we usually restore a
-temporary by uncomputation~\cite[p.~525]{Bennett1973Logical}\cite{Bennett1989TimeSpace}, running the operations that produced it
-backwards~\cite{Bichsel2020Silq,Paradis2021Unqomp}. Silq and Unqomp
-automate this by letting only \code{qfree} gates, which create no
-superposition, produce the temporary~\cite[\S4.4]{Bichsel2020Silq}\cite[\S2.2]{Paradis2021Unqomp},
-so both refuse to uncompute even two Hadamard gates, which each create superposition but together compose to the
-identity~\cite[\S6.2]{Paradis2021Unqomp}. We ask when one unitary on the dropped registers alone restores
-their allocation state and leaves the rest intact.
-
-One \code{drop} may name several registers, which form its \emph{block}, and one occurrence
-of \code{drop} is a \emph{site}. Dropping removes names and
-applies no physical operation, so the dropped registers remain, only hidden. To compare two programs at a site by their joint
-state vectors we stop just before it and delete every earlier drop from the text, renaming reused names apart, so every
-register stays visible. This is
-the \emph{exposed prefix}, and we write $p\simeq q$ when no closed context
-distinguishes those of $p$ and $q$. A context supplies the
-input, possibly entangled with a reference of its own, may apply
-gates, and finally measures every register jointly with that reference,
-so it detects any correlation between the block and the rest.
-
-Now take a program $p$ that allocates a temporary $t$ in a pure
-state $\psi$, works on it and the input $v$ with measurement-free code $M$,
-and drops it. Beside $p$ we put a
-witness $\mathcal S(R,U)$ that prepares $t$ without consulting the
-input, by one gate $R$ on $t$ alone, and computes on $v$ separately,
-by a gate $U$ on $v$ and fresh registers for any further
-temporaries of $M$:
-\[
-\begin{aligned}
-p(v)&=\code{new t @ }\psi\code{; M; drop t; return v},\\
-\mathcal S(R,U)(v)&=\code{new t @ }\psi\code{; R t; U v; drop t; return v}.
-\end{aligned}
-\]
-We call the drop safe if $p\simeq\mathcal S(R,U)$ for some fixed $R$
-and $U$, the same pair for every input $x$ of $v$. Only $M$'s action
-on $\psi\otimes x$ must factor, not its code. In the witness $t$ ends in $R\psi$ whatever $v$ held,
-so $R^\dagger$ on $t$ returns it to $\psi$ without touching $v$, and if
-$p\simeq\mathcal S(R,U)$ the same $R^\dagger$ restores $p$'s temporary,
-because a context may itself apply $R^\dagger$ and look at $t$. Throughout, registers are finite-dimensional over $\C$,
-and programs and contexts may apply any unitary.
-
-Consider two programs on a qubit $v$:
-\begin{center}
-\small\ttfamily
+Quantum data has by now a mature treatment in programming languages,
+from categorical semantics to typed and circuit
+languages~\cite{AbramskyCoecke2004,Selinger2004Towards,SelingerValiron2006,Paykin2017QWIRE}.
+Recent lines of work build a pure, reversible core and add
+measurement to it as a computational
+effect~\cite{Staton2015Effects,Heunen2022QIE,Carette2024QuantumEffect}.
+This work is about the allocation and deallocation of registers
+holding quantum data. Consider two programs on a qubit $v$:
+\par\medskip\centerline{\small\ttfamily
 \begin{tabular}{@{}l@{\qquad\qquad}l@{}}
 prog a (v : [2]) : [2] \{ & prog b (v : [2]) : [2] \{\\
 \quad new t : [2] @ |0>; & \quad new t : [2] @ |0>;\\
 \quad H t; & \quad H t; CX t v;\\
 \quad drop t; return v \} & \quad drop t; return v \}
-\end{tabular}
-\end{center}
+\end{tabular}}\par\medskip\noindent
 In program (a), $H$ puts $t$ in $|{+}\rangle=(|0\rangle+|1\rangle)/\sqrt2$
 whatever $v$ held, and another $H$ restores $|0\rangle$ without touching
 $v$. Program (b) adds \code{CX t v}, flipping $v$ when $t$ is $1$, so at
 input $|0\rangle_v$ it produces the Bell state
 $(|00\rangle+|11\rangle)/\sqrt2$, which independent operations cannot
-prepare. Both lexical lifetimes end at the drop, so checking lifetimes
-alone accepts both.
+prepare, so dropping $t$ leaves $v$ mixed. Both lexical lifetimes end at the drop, so checking scopes
+alone accepts both. Compilers usually uncompute a temporary~\cite[p.~525]{Bennett1973Logical}\cite{Bennett1989TimeSpace,Bichsel2020Silq,Paradis2021Unqomp}. Silq and Unqomp automate this by letting only \code{qfree} gates, which create no
+superposition, produce the temporary~\cite[\S4.4]{Bichsel2020Silq}\cite[\S2.2]{Paradis2021Unqomp}, so both refuse program (a), whose one $H$ is not \code{qfree}~\cite[\S6.2]{Paradis2021Unqomp}. We ask when one unitary on the dropped registers alone restores
+their allocation state and leaves the rest intact.
+
+Now take an arbitrary program $p$ that allocates a temporary $t$ in a pure
+state $\psi$, works on it and the input $v$ together with measurement-free code $M_{t\otimes v}$,
+and drops it. Beside $p$ we put an independent
+witness $\mathcal S(R,U)$ that prepares $t$ without consulting the
+input, by one gate $R_t$ on $t$ alone, and computes on $v$ separately,
+by a gate $U_v$ on $v$ and fresh registers for any further
+temporaries of $M_{t\otimes v}$:
+\[
+\begin{aligned}
+p(v)&=\code{new t : [d] @ }\psi\code{; }M_{t\otimes v}\code{; drop t; return v},\\
+\mathcal S(R,U)(v)&=\code{new t : [d] @ }\psi\code{; }R_t\code{; }U_v\code{; drop t; return v}.
+\end{aligned}
+\]
+We call the drop safe if $p\equiv\mathcal S(R,U)$ for some fixed $R$
+and $U$, the same pair for every input $x$ of $v$, where $p\equiv q$ says that no closed context tells $p$ from $q$ just before the drop, every register still visible. Throughout, registers are finite-dimensional over $\C$,
+and programs and contexts may apply any unitary.
 
 \section{Checking the equivalence}\label{sec:idea}
-\begin{wrapfigure}{r}{.50\linewidth}
-\centering\includegraphics[width=\linewidth]{figures/abstract-matrices}
-\Description{The allocation and Hadamard matrices construct the first pre-drop map. A controlled flip gives the second. Blue rows have temporary label zero and gold rows label one.}
-\end{wrapfigure}
-Let $K$ be the exposed prefix's map, taking input $x$ to the
-joint state before the drop, block first. Program (a) gives
-$Kx=|{+}\rangle\otimes x=(|0\rangle\otimes x+|1\rangle\otimes x)/\sqrt2$,
-and program (b) gives $(|0\rangle\otimes x+|1\rangle\otimes Xx)/\sqrt2$,
-both pictured as matrices read from right to left.
-Reading $t$ in its basis $|0\rangle,|1\rangle$, the part of $K$ tagged
+Stop the program just before the \code{drop} at hand, which we call its
+\emph{site}. Delete earlier drops, which changes no verdict, and rename reused
+names apart. This \emph{exposed prefix} is one map $K$, taking input $x$ to the
+joint state with the dropped registers, the \emph{block}, first.\\
+Program (a) gives
+$K_{(a)}x=|{+}\rangle_t\otimes x_v=(|0\rangle_t\otimes x_v+|1\rangle_t\otimes x_v)/\sqrt2$,\\
+and program (b) gives $K_{(b)}x=(|0\rangle_t\otimes x_v+|1\rangle_t\otimes X_vx_v)/\sqrt2$.
+{\abovedisplayskip=1pt \belowdisplayskip=1pt \abovedisplayshortskip=1pt \belowdisplayshortskip=1pt
+\[\includegraphics[width=.76\linewidth]{figures/abstract-matrices}\]}%
+The matrix $|0\rangle\otimes I$ acts first, on the input $x$. Reading $t$ in its basis $|0\rangle,|1\rangle$, the part of $K$ tagged
 by $|i\rangle$ is a matrix of its own, the \emph{slice} $K_i$,
-blue where $t$ reads $0$ and gold where it reads $1$, which is
+blue for $i=0$ and gold for $i=1$, which is
 what the program has done to $v$ in the branch where $t$ reads $i$, so
-that $Kx=\sum_i|i\rangle\otimes K_i x$: unlike a classical
-\code{switch}, all branches are kept coherently.
+that $Kx=\sum_i|i\rangle_t\otimes K_i x_v$.
 
-\begin{wrapfigure}{r}{.40\linewidth}
-\centering\includegraphics[width=\linewidth]{figures/criterion}
+\begin{wrapfigure}{r}{.54\linewidth}
+\centering\includegraphics[width=\linewidth]{figures/criterion\luafig}
 \Description{The program, its factorization and its witness have equivalent joint maps before the ground symbols marking drops. Triangles prepare states; fresh registers for U are omitted.}
 \end{wrapfigure}
-The drop applies
-no gate and only removes access to the tags, so we are asking whether
-the temporary that carries them is left in one fixed pure state,
-independent of the input and uncorrelated with the rest. That needs every branch to do the same thing to
-the remaining registers, here $v$, up to a scalar, possibly zero, so
-the slices are proportional, $K_i=g_iW$, where the $g_i$ are the
-coordinates of one fixed pure state $g$ of the temporary and $W$ is what the prefix did to the rest. In program (a) both slices are $I/\sqrt2$, so
-$g=|{+}\rangle$ and $W=I$, while in program (b) they are $I/\sqrt2$ and
-$X/\sqrt2$, which are not proportional. As pictured, a safe program, its
-factorization and its witness agree until the drop.
+The drop applies no gate and removes only the name $t$, so
+  the hidden register remains, and we are asking whether it is left
+in one fixed pure state, independent of the input and uncorrelated
+with the rest. A context supplies the input, possibly
+  entangled with a reference register of its own, may apply gates,
+  and measures every register jointly with that reference, so
+  contexts detect any correlation of $t$ with other registers. The action of $M_{t\otimes v}$ on $\psi\otimes x$
+  factors at a safe drop, whatever its code, because every branch does
+  the same thing to the remaining registers, here $v$, up to a
+  possibly zero scalar, so the slices are proportional, $K_i=g_iW$
+  (Kraus rank at most one, a standard condition), where
+  the $g_i$ are the coordinates of one fixed pure state $g$ of the
+  temporary and $W$ is what the prefix did to the rest. In
+  program (a) both slices are $I_v/\sqrt2$, so $g=|{+}\rangle_t$ and
+  $W=I_v$, while in program (b) they are $I_v/\sqrt2$ and
+    $X_v/\sqrt2$, which are not proportional. A safe
+    program, its factorization and its witness agree until the drop,
+    as pictured: triangles prepare, ground symbols drop.
 
-\begin{samepage}
 \begin{theorem}[without measurement]\label{thm:measurementfree}
 For a well-typed measurement-free program $p$ at a drop of only allocated
 temporaries, let $K$ be its exposed prefix's joint map and $\psi$ the pure
 allocation state. The following are equivalent.
-\begin{enumerate}[leftmargin=1.6em,itemsep=3pt,topsep=3pt,parsep=0pt]
-\item $p\simeq\mathcal S(R,U)$ for some independent witness.
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt,topsep=2pt,parsep=0pt]
+\item $p\equiv\mathcal S(R,U)$ for some independent witness.
 \item There are a unit vector $g$ on the block and a linear map $W$ to all
 other registers such that $\forall x,\ Kx=g\otimes Wx$.
 \item One unitary on the block alone restores $\psi$ at every input.
 \end{enumerate}
 The map $W$ is an isometry, preserving norms and inner products. The witness
-prepares $g=R\psi$ and realizes $W$ through $U$ acting on the input and fresh registers.
+prepares $g=R_t\psi$ and realizes $W$ through $U_v$ acting on the input and fresh registers.
 \end{theorem}
-\end{samepage}
 
 Deutsch--Jozsa shows why slices need only be proportional,
 not equal. With $|{-}\rangle=(|0\rangle-|1\rangle)/\sqrt2$, its oracle
 obeys
 $O_f(|{-}\rangle\otimes|z\rangle)=|{-}\rangle\otimes(-1)^{f(z)}|z\rangle$,
 so the temporary stays fixed and the data carries the function's
-phase, and the two slices differ only in sign.
+phase, and $t$'s two slices differ only in sign.
 
-\begin{wrapfigure}{r}{.32\linewidth}
+\needspace{6\baselineskip}
+\begin{wrapfigure}{r}{.36\linewidth}
 \centering\includegraphics[width=\linewidth]{figures/abstract-reflection}
 \Description{The Householder reflection exchanges g-tilde and psi through the mirror orthogonal to w.}
 \end{wrapfigure}
-We call $g$ a \emph{certificate}. Since joint observations fix $K$ only up to an overall
+We call $g$ a \emph{certificate}. Since $Kx=g\otimes Wx$ fixes $g$ only up to a
 phase, choose the representative $\tilde g$ with $\langle\psi,\tilde g\rangle$
-real and nonnegative, moving every phase into $W$. If the overlap is zero,
+real and nonnegative, moving the phase into $W$. If the overlap is zero,
 make the first nonzero coordinate of $\tilde g$ real and positive.
-If $\tilde g=\psi$, as safe use~\cite[Eq.~(1)]{Liu2026Uncomputation} and clean
-safety~\cite[Def.~1]{Li2026AncillaSafety} require of every ancilla, no gate is needed. Otherwise the pictured Householder
-reflection~\cite[p.~340, Eqs.~(3)--(4)]{Householder1958Triangularization}
+If $\tilde g=\psi$, no gate is needed, which is what safe use~\cite[Eq.~(1)]{Liu2026Uncomputation} and clean
+safety~\cite[Def.~1]{Li2026AncillaSafety} require of every clean ancilla. Otherwise the pictured Householder
+reflection~\cite[p.~340, Eqs.~\mbox{(3)--(4)}]{Householder1958Triangularization}
 $T=I-2ww^\dagger/\|w\|^2$ through the hyperplane orthogonal to
 $w=\psi-\tilde g$ exchanges $\tilde g$ and $\psi$. Applied to the
 temporary alone, $T$ returns it to $\psi$ at every input and leaves the
-rest unchanged: $\|w\|^2=-2\langle w,\tilde g\rangle$ gives $T\tilde g=\tilde g+w=\psi$. Being its own inverse, it is also the witness's $R$. For program (a) it is $H$, and Grover's diffusion~\cite[\S4]{Grover1996Search} is $-T$ with $w$ the uniform state.
+rest unchanged: $\|w\|^2=-2\langle w,\tilde g\rangle$ gives $T\tilde g=\tilde g+w=\psi$. Being its own inverse, it is also a witness's $R_t$, as $T\psi=\tilde g$. Conversely, in any witness, $t$ ends in $R_t\psi$ whatever $v$ held,
+so $\smash[t]{R_t^\dagger}$ returns it to $\psi$ without touching $v$, and if
+$p\equiv\mathcal S(R,U)$ the same $\smash[t]{R_t^\dagger}$ restores $p$'s temporary,
+because a context may itself apply $\smash[t]{R_t^\dagger}$ and look at $t$. For program (a) it is $H$, and Grover's diffusion~\cite[\S4]{Grover1996Search} is $-T$ when $w$ is uniform.
 
 \section{One measurement record at a time}\label{sec:results}
 
 With measurement, a program can be safe on one sequence of outcomes
-and unsafe on another. Our \code{lift}, after dynamic lifting~\cite{Fu2023DynamicLifting} without its separate circuit-generation stage, measures a register and binds an outcome
+and unsafe on another. Our \code{lift} measures a register and, as dynamic lifting~\cite{Fu2023DynamicLifting} does but with no separate circuit-generation stage, binds an outcome
 that only classical \code{if} guards can read.
-In \code{lift[\{0\}] t}, outcome $1$ keeps the coordinates
+In \code{lift[\{0\}]~t}, outcome $1$ keeps the coordinates
 where $t$ reads $0$ and outcome $0$ keeps their complement. A
 \emph{record} $o$ lists the outcomes along one path through the
 program, and its exposed map $K_o$ is the joint map along that path,
@@ -197,6 +183,7 @@ probability of reaching the drop along that path is $\|K_o x\|^2$.
 
 \begin{figure}[htbp]
 \centering
+\vspace{3pt}
 {\small\ttfamily
 \begin{tabular}{@{}l@{\qquad\qquad}l@{}}
 prog c (v : [2]) : [2] \{ & prog witness (v : [2]) : [2] \{\\
@@ -205,33 +192,32 @@ prog c (v : [2]) : [2] \{ & prog witness (v : [2]) : [2] \{\\
 \quad b = lift[\{0\}] t; & \quad k = lift[\{0\}] a; drop a;\\
 \quad V t v; drop t; return v \} & \quad drop t; return v \}\\
 \end{tabular}}
+\vspace{3pt}
 \Description{Program c measures t after copying the Hadamard-transformed input into it and then applies V. The witness implements W on v through a measured helper a.}
 \end{figure}
 
-\begin{wrapfigure}{r}{.50\linewidth}
-\centering\includegraphics[width=\linewidth]{figures/abstract-records}
-\Description{At input alpha zero plus beta one, the premeasurement state is alpha plus beta times zero zero plus alpha minus beta times one one, divided by square root two. The first record has fixed temporary zero and the second has a Bell state.}
-\end{wrapfigure}
 Take the listed program (c) at input
 $x=\alpha|0\rangle+\beta|1\rangle$, with $t$ first.
 Before the measurement it holds
 $((\alpha+\beta)|00\rangle+(\alpha-\beta)|11\rangle)/\sqrt2$, and $V$
 fixes $|00\rangle$ and sends $|11\rangle$ to
 $(|01\rangle+|10\rangle)/\sqrt2$, so the two records leave
-the unnormalized states $K_1x$ and $K_0x$ pictured with their weights.
+the unnormalized states $K_ox$, $o=1,0$, pictured with their weights.
+{\abovedisplayskip=1pt \belowdisplayskip=1pt \abovedisplayshortskip=1pt \belowdisplayshortskip=1pt
+\[\includegraphics[width=.78\linewidth]{figures/abstract-records}\]}
 
 On record $1$ the slices are again proportional, with
 $W_1x=(\alpha+\beta)|0\rangle/\sqrt2$, while record $0$ holds a Bell state
 whenever $\alpha\neq\beta$ and is unsafe. Normalizing
 $W_1x$ would hide record $1$'s weight, $1$ at
-input $|{+}\rangle$ and only $1/2$ at input $|0\rangle$. To preserve these
-weights the measurement-free witness no longer suffices, because allocations and gates preserve length, so
-its map is isometric, while $W_1$, a \emph{contraction} lengthening no vector, shrinks some. The witness, with $R=I$, puts the lost length on a fresh qubit $a$,
-preparing with $U$ the same state on $(a,v)$, and \code{lift[\{0\}] a} keeps outcome
-$k=1$, where $a$ reads $0$, leaving exactly $W_1x$ beside $|0\rangle_t$ with
-the same weight. Any contraction $W$ is realized this way, as
+input $|{+}\rangle$ and only $1/2$ at input $|0\rangle$. To keep these
+weights, the measurement-free witness no longer suffices, because allocations and gates preserve length and
+make its map isometric, while $W_1$ shrinks some vector and a \emph{contraction} lengthens none. The witness, with $R_t=I$, puts the lost length on a fresh qubit $a$,
+preparing with $U$ on $(a,v)$ what $p$ held on $(t,v)$, and \code{lift[\{0\}] a} keeps outcome
+$k=1$, where $a$ reads $0$, leaving $W_1x$ beside $|0\rangle_t$ with
+the same weight. Any contraction $W$ on $v$ arises this way, as
 $x\mapsto|0\rangle\otimes Wx+|1\rangle\otimes(I-W^\dagger W)^{1/2}x$ preserves length
-and so extends to a gate. By $p\simeq_o\mathcal S(R,U)$ we
+and extends to a gate. By $p\equiv_o\mathcal S(R,U)$ we
 mean equal contextual observations on $p$'s record $o$ and on the
 witness's own kept outcome $1$, omitting its fixed $|0\rangle_a$
 factor, with neither run normalized, whatever happens on other records.
@@ -241,8 +227,8 @@ factor, with neither run normalized, whatever happens on other records.
 Let the site $s$ drop only allocated temporaries in a well-typed program $p$, and let
 $o$ be a record whose path executes $s$. With every unitary available as a gate,
 let $K_o$ be the exposed prefix's map at $s$ on $o$, with the block first. The following are equivalent.
-\begin{enumerate}[leftmargin=1.6em,itemsep=3pt,topsep=3pt,parsep=0pt]
-\item $p\simeq_o\mathcal S(R,U)$ for some one-lift independent witness.
+\begin{enumerate}[leftmargin=1.6em,itemsep=1pt,topsep=2pt,parsep=0pt]
+\item $p\equiv_o\mathcal S(R,U)$ for some one-lift independent witness.
 \item There are a unit vector $g$ on the block and a linear contraction $W_o$ to all other registers such that
 $\forall x,\ K_o x=g\otimes W_o x$.
 \item One unitary on the block alone restores its pure allocation state
@@ -255,25 +241,25 @@ three conditions hold. Different records may need different return gates.
 
 A caller who ignores the record sees only the \emph{summed channel}~\cite[\S2.2.1]{Watrous2018TQI}, which averages the
 records' states of the returned registers and a reference by their probabilities.
-It predicts every joint measurement of both, so one might expect it to decide safety, but it cannot
-do so on each record.
+It predicts every joint measurement of both, but it cannot
+decide safety on each record.
 For example, run the programs drawn below at input
 $x=\alpha|0\rangle+\beta|1\rangle$. Before \code{drop t} their unnormalized
 states on records $1$ and $0$ are
 \[
 \begin{array}{c@{\quad}c@{\quad}c@{\quad}l}
-\raisebox{-.3\height}{\includegraphics[page=1,scale=.9]{figures/abstract-summed}}
+\raisebox{-.3\height}{\includegraphics[page=1,scale=1.2]{figures/abstract-summed}}
  & {\color{accent}|0\rangle\otimes x/\sqrt2} & {\color{accentwarm}|1\rangle\otimes Zx/\sqrt2} & \text{safe on both}\\[2pt]
-\raisebox{-.3\height}{\includegraphics[page=2,scale=.9]{figures/abstract-summed}}
+\raisebox{-.3\height}{\includegraphics[page=2,scale=1.2]{figures/abstract-summed}}
  & {\color{accent}(\alpha|00\rangle+\beta|11\rangle)/\sqrt2}
  & {\color{accentwarm}(\alpha|10\rangle+\beta|01\rangle)/\sqrt2} & \text{safe on neither}
 \end{array}
 \]
 Only the first row gives $t$ one input-independent state per record. Yet
 both act on $v$ as
-the same summed channel, leaving $v$ in $|0\rangle$ or $|1\rangle$ with probabilities $|\alpha|^2$
+the same summed channel, measuring $v$ as $|0\rangle$ or $|1\rangle$ with probabilities $|\alpha|^2$
 and $|\beta|^2$, and
-every record has probability $1/2$ at every input, so only the per-record states tell them
+every record has probability $1/2$ at every input, so only per-record states tell them
 apart.
 
 \section{Blocks and loans}\label{sec:loans}
@@ -287,22 +273,20 @@ We also consider blocks containing \emph{loans}, registers borrowed in
 unknown states, possibly entangled with their caller, who
 expects them back as they were. The witness cannot prepare such a
 block, since it does not know the loan's state $\ell$. Instead
-$\mathcal S(R,U)$ receives $\ell$, allocates the temporaries beside it,
-the map $J\ell=\ell\otimes\psi$ with loans first, applies $R$
+$\mathcal S(R,U)$ receives $\ell$, allocates the temporaries beside it
+(the map $J\ell=\ell\otimes\psi$ with loans first), applies $R$
 to the whole block, and lets $U$ act only outside it. The fixed
 certificate $g$, a map from $\C$ into the block, becomes an isometry
-$B:\mathcal H_{\mathrm{in}}\to\mathcal H$ from the loans' space into the
-block's space $\mathcal H$ that carries the loan's input along. The drop
-is then safe, $p\simeq\mathcal S(R,U)$, exactly
+$B:\mathcal H_{\mathrm{loan}}\to\mathcal H$ from the loan's space into the
+block's space $\mathcal H$, carrying the loan's input along. The drop
+is then safe, $p\equiv\mathcal S(R,U)$, exactly
 when $K=B\otimes W$. The witness exists because a unitary $R$ of the
 block carries the isometry $J$ onto $B$, $RJ=B$, and the return gate
 $T=R^\dagger$ satisfies $TB=J$. For program \code{mixed}, listed beside its circuit,
 with loan $l$, we have $B\ell=X\ell\otimes|{+}\rangle$, and the inserted $T=X\otimes H$
 hands the unknown loan back to the caller at the drop and restores $t$,
 although \code{mixed} returns \code{()}.
-\begin{figure}[tb]
-\centering
-\begin{minipage}[c]{.45\linewidth}
+\par\noindent\begin{minipage}[c]{.44\linewidth}
 \small\ttfamily
 \begin{tabular}{@{}l@{}}
 prog mixed (loan l : [2]) : 1 \{\\
@@ -311,17 +295,15 @@ prog mixed (loan l : [2]) : 1 \{\\
 \quad drop (l,t); return () \}
 \end{tabular}
 \end{minipage}\hfill
-\begin{minipage}[c]{.37\linewidth}\centering
-\includegraphics[width=\linewidth]{figures/abstract-loan}
-\end{minipage}
-\Description{The source program and two-wire diagram distinguish the source H and X from the inserted H and X that restore the temporary and loan. The loan is the first wire.}
-\end{figure}
+\begin{minipage}[c]{.46\linewidth}\centering
+\includegraphics[width=\linewidth]{figures/abstract-loan\luafig}
+\end{minipage}\par
 
 With measurement we again compare one record at a time, using
 $B\otimes W_o$, where $B$ and the return gate may depend on the record. If
 the caller's loan and reference together are correlated with the program's other inputs,
 the record can change their
-normalized joint state, which the return gate does not undo. If they are not, and always without measurement, the return restores that state
+normalized joint state, which the return gate does not undo. If they are not, or if the program measures nothing, the gate restores that state
 on every record that occurs.
 
 \section{Scope and further work}\label{sec:status}
@@ -333,44 +315,43 @@ each record and pool its temporaries for a
 later \code{new} of matching dimension and state. Reuse preserves the records, their
 weights and, on each record, the reduced state of the returned
 registers. Our Haskell checkers compute exactly: one builds
-$K_o$ at one-temporary sites, the other runs the program on basis inputs and their sum. Both
-grow exponentially in the number of qubits, but even with only basis
+$K_o$ at one-temporary sites, the other runs the program on basis inputs and asks that a block of temporaries
+end in one state per record, up to phase, on every run reaching the drop. Both
+are exponential in the number of qubits, but even with only basis
 allocations and $X$, \code{CX} and Toffoli gates, deciding whether
 a drop of temporaries is safe on a given record is coNP-complete in the
 size of the program text, as is deciding safety of all such drops on
 all records (compare~\cite[Cor.~3.1]{Liu2026Uncomputation}).
 
-Our OpenQASM~3 compiler uses the second check, computes numerical return
-gates, and reuses basis-allocated blocks of temporaries safe
-on every record, since records share one wire map, clearing them to $|0\rangle$. Replacing program (a)'s return with
-\code{new u : [2] @ |1>; return (v,u)}, typed \code{[2] * [2]}, then uses two circuit qubits where
-fresh allocation would use three: the return gate restores $t$ before $X$ prepares $u$ on $t$'s wire, and an independent simulation confirms that $v$ keeps its Bell
-correlations with a reference and that $u$ ends in $|1\rangle$. Allocations must be basis states,
-program (c)'s $V$ is unsupported, and loans may be dropped only
-before lifts or classical guards. The general-case loan-return check tests $TB=J$ on rounded columns of $B$, using the computed matrix, not the emitted gates.
+Our OpenQASM~3 compiler uses the second check, computes return
+gates, and reuses basis-allocated blocks safe
+on every record, clearing them to $|0\rangle$. Changing program (a)'s return and type to
+\code{new u : [2] @ |1>; return (v,u)} uses two circuit qubits, like a reset, where
+fresh allocation uses three: the return gate restores $t$ before $X$ prepares $u$ on $t$'s wire. Only basis allocations compile,
+program (c)'s $V$ is unsupported, and loans drop only
+before lifts or classical guards. The loan-return check tests $TB=J$ on rounded columns of $B$.
 
-Testing what the temporary ends as, not how it was produced, our criterion
-accepts programs the syntactic checks of \Cref{sec:problem} refuse,
-though joint uncomputation can restore an entangled temporary only by changing
-what the caller sees. ReQWIRE verifies that an ancilla is
-restored~\cite{Rand2019ReQWIRE}, as Q\#~\cite{MicrosoftQsharpMemory} and fractional
+Testing what a temporary ends as, not how it arose, our criterion
+accepts the Deutsch\nobreakdash--Jozsa drop that Silq and Unqomp refuse and Qutes~\cite{Faro2026Qutes} does not reclaim,
+while reversing program (b)'s gates
+changes what it returns. Qurts puts lifetimes in types for uncomputation~\cite[\S3]{Hirata2025Qurts} and Reqomp trades qubits for
+gates~\cite[\S4]{Paradis2024Reqomp}, but both uncompute. ReQWIRE verifies that an ancilla is
+restored~\cite[\S4]{Rand2019ReQWIRE}, as Q\#~\cite{MicrosoftQsharpMemory} and fractional
 types~\cite{Chen2020Fractional} require, and Qutes inverts a temporary's history once it is
-dead or output-isolable~\cite[Defs.~2--6]{Faro2026Qutes}.
-Local rotations repair separable errors on individual dirty ancillas~\cite[\S5.2, Alg.~2]{Li2026AncillaSafety},
-where our one gate per record restores a whole block. Twist checks purity~\cite{Yuan2022Twist}, but a
-temporary swapped with the input is pure at each product input yet supplies no fixed state. On
-measurement-free circuits with clean qubit
-ancillas, slices summing to a
+dead or output-isolable, which Deutsch--Jozsa's balanced oracle is not~\cite[Defs.~2--6]{Faro2026Qutes}.
+Local rotations repair separable errors on a dirty ancilla~\cite[\S5.2, Alg.~2]{Li2026AncillaSafety},
+where our one gate per record restores a whole block. On
+measurement-free circuits with $|0\rangle$
+ancillas, the validity test of slices summing to a
 unitary~\cite[Def.~3.1]{Liu2026Uncomputation} is incomparable with
-safety: those of program (a) sum to $\sqrt2 I$, proportional to a unitary but not norm preserving, though its drop is safe,
+safety: those of program (a) sum to $\sqrt2 I$, proportional to a unitary but not norm preserving, yet its drop is safe,
 and those of \code{new t : [2] @ |0>; CX v t; drop t} sum to $I$ though its
 drop is unsafe. QBorrow needs an identity loan factor per denoted
 operation~\cite[Def.~5.1]{Su2025Borrowing}, Bona one per borrowing
-body~\cite[Def.~3.2]{Xu2026Bona}, where our inserted return gate
-undoes any isometric encoding $B$. Loops and quantum recursion, re-entering scopes under quantum
-guards, remain open with the certificates they need,
-as do exact or approximate returns in a finite gate set and the question of when restoration
-beats measurement and reset~\cite{DeCross2023QubitReuse,Hua2023CaQR}.
+body~\cite[Def.~3.2]{Xu2026Bona}, where our return gate
+undoes any isometric encoding $B$. Separation logics prove loan returns by
+hand~\cite{Matsushita2026RapunSL,Su2024Heap}. Loops and quantum recursion, which re-enter scopes, remain open,
+as do their certificates and exact or approximate returns in a finite gate set.
 
 \clearpage
 \bibliographystyle{ACM-Reference-Format}

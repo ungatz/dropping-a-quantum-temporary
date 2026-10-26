@@ -3,25 +3,26 @@
 \begin{document}
 \tikzset{wire/.style={draw=ink},
  g/.style={draw=ink,fill=white,rounded corners=1pt,inner sep=0.9pt,minimum height=3.0mm},
+ gl/.style={g,font=\footnotesize,inner sep=0.6pt},
  ctl/.style={circle,fill=ink,inner sep=0pt,minimum size=3.2pt}}
-\begin{tikzpicture}[house,semithick,font=\footnotesize]
- \node[anchor=east,inner sep=1pt] at (0,0.24) {$t:|{+}\rangle$};
+\begin{tikzpicture}[house,semithick,font=\small]
+ \node[anchor=east,inner sep=1pt] at (0,0.28) {$t:|{+}\rangle$};
  \node[anchor=east,inner sep=1pt] at (0,0) {$v:x$};
- \draw[wire] (0.05,0.24) -- (1.95,0.24);
+ \draw[wire] (0.05,0.28) -- (1.95,0.28);
  \draw[wire] (0.05,0) -- (1.95,0);
- \node[ctl] (c) at (0.5,0.24) {};
+ \node[ctl] (c) at (0.5,0.28) {};
  \node[g] (z) at (0.5,0) {$Z$};
  \draw[ink] (c) -- (z);
- \node[g] at (1.35,0.24) {lift};
+ \node[gl] at (1.35,0.28) {lift[$\{0\}$]};
 \end{tikzpicture}
-\begin{tikzpicture}[house,semithick,font=\footnotesize]
- \node[anchor=east,inner sep=1pt] at (0,0.24) {$t:|{+}\rangle$};
+\begin{tikzpicture}[house,semithick,font=\small]
+ \node[anchor=east,inner sep=1pt] at (0,0.28) {$t:|{+}\rangle$};
  \node[anchor=east,inner sep=1pt] at (0,0) {$v:x$};
- \draw[wire] (0.05,0.24) -- (1.95,0.24);
+ \draw[wire] (0.05,0.28) -- (1.95,0.28);
  \draw[wire] (0.05,0) -- (1.95,0);
- \node[g] at (0.6,0.24) {lift};
+ \node[gl] at (0.72,0.28) {lift[$\{0\}$]};
  \node[ctl] (c) at (1.45,0) {};
- \draw[ink] (1.45,0.24) circle (2.6pt);
- \draw[ink] (1.45,0.24) ++(0,2.6pt) -- (c);
+ \draw[ink] (1.45,0.28) circle (2.6pt);
+ \draw[ink] (1.45,0.28) ++(0,2.6pt) -- (c);
 \end{tikzpicture}
 \end{document}
