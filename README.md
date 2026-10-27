@@ -3,7 +3,7 @@
 When can a quantum compiler restore a temporary register by acting on that
 register alone, without changing the rest of the computation?
 
-- [`abstract/abstract.pdf`](abstract/abstract.pdf) is the extended abstract;
+- [`abstract/abstract.pdf`](abstract/abstract.pdf) is the LuaLaTeX extended abstract;
   its LaTeX and figure sources are in [`abstract/`](abstract/).
 - [`code/haskell/`](code/haskell/) contains the typed language, safety checkers,
   OpenQASM 3 compiler, examples and tests.
