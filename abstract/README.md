@@ -1,5 +1,7 @@
 # Abstract source
 
-`abstract.pdf` is the LuaLaTeX rendering. Rebuild it with `make abstract` using `latexmk`, `acmart` and the Libertinus fonts. The abstract uses the anonymous review class option. Programs are set in Iosevka Custom when it is installed and in Inconsolata otherwise.
+`abstract.pdf` is the LuaLaTeX rendering. Rebuild it with `make abstract` using `latexmk`, `acmart`, the Libertinus fonts and Iosevka Custom. The abstract uses the anonymous review class option.
 
-`make figures` builds the figure PDFs from the standalone TikZ sources in `figures/`, and `make abstract` does so first for any figure that is out of date: the `-lua` copies with LuaLaTeX, so that their letters match the text, and the rest with pdfLaTeX. `figures/house.tex` requires TikZ/PGF, amsmath, Libertine (`libertine`), Inconsolata (`zi4`), and newtx math (`newtxmath`); `figures/house-lua.tex` requires TikZ/PGF, amsmath, `fontspec`, `unicode-math` and the Libertinus fonts. The house files provide the palette and drawing styles.
+`make figures` rebuilds the standalone TikZ diagrams. The abstract includes their `-lua` copies, whose text, mathematics and code use the same fonts as the document. These require TikZ/PGF, amsmath, fontspec and unicode-math. The unsuffixed pdfLaTeX copies use Libertine, Inconsolata and newtx math. The house files provide the palette and drawing styles.
+
+Language keywords use a slightly heavier code face. Register names use the regular code face in the programs, prose and wire labels. Gates, states and semantic maps use the math face. Colours in nearby prose match the labelled branches or vectors in the figures.

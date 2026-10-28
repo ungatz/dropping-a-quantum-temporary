@@ -10,6 +10,7 @@ parameters numerically. The library needs only `base` and `containers`.
 cabal test                                 # the five test suites
 cabal run dqt                              # the list of commands
 cabal run dqt -- run programs/temp-and.s   # run one program and judge its drops
+cabal run dqt -- run programs/record-parity.s # two lifts, four record verdicts
 cabal run dqt -- compile programs/dj.s     # compile one program to OpenQASM 3
 cabal run dqt -- all                       # every report
 python3 check-examples.py                  # run the examples in the comments

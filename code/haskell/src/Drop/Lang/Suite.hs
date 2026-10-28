@@ -108,7 +108,7 @@ suiteCheckCount corpus = sum (map (length . gChecks) (suiteGroups corpus))
 
 -- >>> corpus <- readCorpus
 -- >>> suiteCheckCount corpus
--- 279
+-- 283
 -- >>> [ (gName g, length (gChecks g)) | g <- take 3 (suiteGroups corpus) ]
 -- [("DJ",20),("BV",12),("Grover",5)]
 
@@ -270,7 +270,7 @@ suiteRun = do
 -- The whole suite: the table of verdicts, then each group. A zero means no check failed.
 -- >>> suiteRun
 -- ====================================================================================
--- language layer: 279 checks in 15 groups
+-- language layer: 283 checks in 15 groups
 -- algorithms covered (10): DJ, BV, Grover, QPE, superdense, teleport, RUS, Shor, Simon, temp-AND
 -- drop verdicts per program, drop site and selection
 -- ====================================================================================
@@ -311,7 +311,7 @@ suiteRun = do
 -- tilt          15/15 checks pass
 -- scalars       11/11 checks pass
 -- exhaustive    11/11 checks pass
--- syntax        127/127 checks pass
+-- syntax        131/131 checks pass
 -- passes        8/8 checks pass
 -- ====================================================================================
 -- ALL CHECKS PASS

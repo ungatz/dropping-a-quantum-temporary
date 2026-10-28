@@ -1,0 +1,88 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house-lua}
+\DeclareMathSizes{9}{9}{8.5}{6.5}
+\definecolor{levelzero}{HTML}{1F4E79}
+\definecolor{levelone}{HTML}{9A5B00}
+\colorlet{lvl0soft}{levelzero!22}
+\colorlet{lvl1soft}{levelone!27}
+\begin{document}
+\begin{tikzpicture}[house,semithick,font=\large]
+\node[anchor=east,inner sep=0pt] at (1.32,0) {$K^{(a)}=\dfrac1{\sqrt2}$};
+\node[anchor=south,inner sep=0pt] at (2.295,1.02) {$\displaystyle\overbrace{\hspace{2.85cm}}^{\textstyle H\otimes I}$};
+\node[anchor=south,inner sep=0pt] at (4.65,1.02) {$\displaystyle\overbrace{\hspace{1.14cm}}^{\textstyle |0\rangle\otimes I}$};
+\node at (3.92,0) {$\cdot$};
+\node at (5.55,0) {$=$};
+\node at (5.92,0) {$\dfrac1{\sqrt2}$};
+\node[anchor=south,inner sep=0pt] at (6.525,1.02) {$\displaystyle\overbrace{\hspace{1.69cm}}^{\textstyle K^{(a)}}$};
+\node at (6.8,-1.16) {\phantom{$K_0=K_1=I/\sqrt2$}};
+\node at (6.8,-1.16) {slices {\color{levelzero}$I/\sqrt2$}, {\color{levelone}$I/\sqrt2$}};
+\node[anchor=south,inner sep=0pt] at (9.86,1.02) {$\displaystyle\overbrace{\hspace{1.82cm}}^{\textstyle K^{(b)}=\mathrm{CX}\,K^{(a)}}$};
+\node[anchor=east] at (9.5,0) {$\dfrac1{\sqrt2}$};
+\node at (10.2,-1.16) {\phantom{$K_0=I/\sqrt2,\quad K_1=X/\sqrt2$}};
+\node at (10.2,-1.16) {slices {\color{levelzero}$I/\sqrt2$}, {\color{levelone}$X/\sqrt2$}};
+\fill[lvl0soft] (1.5,0) rectangle (3.7,0.84);
+\fill[lvl1soft] (1.5,-0.84) rectangle (3.7,0);
+\fill[levelzero] (1.5,0) rectangle (1.55,0.84);
+\fill[levelone] (1.5,-0.84) rectangle (1.55,0);
+\draw[ink] (1.58,0.86) -- (1.48,0.86) -- (1.48,-0.86) -- (1.58,-0.86);
+\draw[ink] (3.62,0.86) -- (3.72,0.86) -- (3.72,-0.86) -- (3.62,-0.86);
+\node[inner sep=0pt] at (1.775,0.63) {$ 1 $};
+\node[inner sep=0pt] at (2.325,0.63) {$ 0 $};
+\node[inner sep=0pt] at (2.875,0.63) {$ 1 $};
+\node[inner sep=0pt] at (3.425,0.63) {$ 0 $};
+\node[inner sep=0pt] at (1.775,0.21) {$ 0 $};
+\node[inner sep=0pt] at (2.325,0.21) {$ 1 $};
+\node[inner sep=0pt] at (2.875,0.21) {$ 0 $};
+\node[inner sep=0pt] at (3.425,0.21) {$ 1 $};
+\node[inner sep=0pt] at (1.775,-0.21) {$ 1 $};
+\node[inner sep=0pt] at (2.325,-0.21) {$ 0 $};
+\node[inner sep=0pt] at (2.875,-0.21) {$ -1 $};
+\node[inner sep=0pt] at (3.425,-0.21) {$ 0 $};
+\node[inner sep=0pt] at (1.775,-0.63) {$ 0 $};
+\node[inner sep=0pt] at (2.325,-0.63) {$ 1 $};
+\node[inner sep=0pt] at (2.875,-0.63) {$ 0 $};
+\node[inner sep=0pt] at (3.425,-0.63) {$ -1 $};
+\fill[lvl0soft] (4.1000000000000005,0) rectangle (5.2,0.84);
+\fill[lvl1soft] (4.1000000000000005,-0.84) rectangle (5.2,0);
+\fill[levelzero] (4.1000000000000005,0) rectangle (4.15,0.84);
+\fill[levelone] (4.1000000000000005,-0.84) rectangle (4.15,0);
+\draw[ink] (4.180000000000001,0.86) -- (4.080000000000001,0.86) -- (4.080000000000001,-0.86) -- (4.180000000000001,-0.86);
+\draw[ink] (5.12,0.86) -- (5.22,0.86) -- (5.22,-0.86) -- (5.12,-0.86);
+\node[inner sep=0pt] at (4.375000000000001,0.63) {$ 1 $};
+\node[inner sep=0pt] at (4.925000000000001,0.63) {$ 0 $};
+\node[inner sep=0pt] at (4.375000000000001,0.21) {$ 0 $};
+\node[inner sep=0pt] at (4.925000000000001,0.21) {$ 1 $};
+\node[inner sep=0pt] at (4.375000000000001,-0.21) {$ 0 $};
+\node[inner sep=0pt] at (4.925000000000001,-0.21) {$ 0 $};
+\node[inner sep=0pt] at (4.375000000000001,-0.63) {$ 0 $};
+\node[inner sep=0pt] at (4.925000000000001,-0.63) {$ 0 $};
+\fill[lvl0soft] (6.25,0) rectangle (7.35,0.84);
+\fill[lvl1soft] (6.25,-0.84) rectangle (7.35,0);
+\fill[levelzero] (6.25,0) rectangle (6.3,0.84);
+\fill[levelone] (6.25,-0.84) rectangle (6.3,0);
+\draw[ink] (6.33,0.86) -- (6.23,0.86) -- (6.23,-0.86) -- (6.33,-0.86);
+\draw[ink] (7.27,0.86) -- (7.369999999999999,0.86) -- (7.369999999999999,-0.86) -- (7.27,-0.86);
+\node[inner sep=0pt] at (6.525,0.63) {$ 1 $};
+\node[inner sep=0pt] at (7.075,0.63) {$ 0 $};
+\node[inner sep=0pt] at (6.525,0.21) {$ 0 $};
+\node[inner sep=0pt] at (7.075,0.21) {$ 1 $};
+\node[inner sep=0pt] at (6.525,-0.21) {$ 1 $};
+\node[inner sep=0pt] at (7.075,-0.21) {$ 0 $};
+\node[inner sep=0pt] at (6.525,-0.63) {$ 0 $};
+\node[inner sep=0pt] at (7.075,-0.63) {$ 1 $};
+\fill[lvl0soft] (9.649999999999999,0) rectangle (10.75,0.84);
+\fill[lvl1soft] (9.649999999999999,-0.84) rectangle (10.75,0);
+\fill[levelzero] (9.649999999999999,0) rectangle (9.7,0.84);
+\fill[levelone] (9.649999999999999,-0.84) rectangle (9.7,0);
+\draw[ink] (9.729999999999999,0.86) -- (9.629999999999999,0.86) -- (9.629999999999999,-0.86) -- (9.729999999999999,-0.86);
+\draw[ink] (10.67,0.86) -- (10.77,0.86) -- (10.77,-0.86) -- (10.67,-0.86);
+\node[inner sep=0pt] at (9.924999999999999,0.63) {$ 1 $};
+\node[inner sep=0pt] at (10.475,0.63) {$ 0 $};
+\node[inner sep=0pt] at (9.924999999999999,0.21) {$ 0 $};
+\node[inner sep=0pt] at (10.475,0.21) {$ 1 $};
+\node[inner sep=0pt] at (9.924999999999999,-0.21) {$ 0 $};
+\node[inner sep=0pt] at (10.475,-0.21) {$ 1 $};
+\node[inner sep=0pt] at (9.924999999999999,-0.63) {$ 1 $};
+\node[inner sep=0pt] at (10.475,-0.63) {$ 0 $};
+\end{tikzpicture}
+\end{document}

@@ -3,8 +3,9 @@
 \DeclareMathSizes{9}{9}{8.5}{6.5}
 \newcommand{\ket}[1]{\lvert #1\rangle}
 \newcommand{\bra}[1]{\langle #1\rvert}
-\definecolor{levelzero}{HTML}{0072B2}
-\definecolor{levelone}{HTML}{E69F00}
+\definecolor{levelzero}{HTML}{1F4E79}
+\definecolor{levelone}{HTML}{9A5B00}
+\definecolor{certink}{HTML}{6D3D85}
 \colorlet{lvl0soft}{levelzero!18}
 \colorlet{lvl1soft}{levelone!23}
 
@@ -16,11 +17,11 @@
 \begin{scope}[yshift=-2.95cm]
   \node at (6.1,0.45) {$\dfrac{{\color{accent}(\alpha+\beta)\ket{00}}+{\color{accentwarm}(\alpha-\beta)\ket{11}}}{\sqrt2}$};
   \node[font=\normalsize, text=muted, anchor=west, inner sep=2pt] at (9.2,0.45) {before measurement};
-  \node[font=\normalsize, inner sep=2pt] (lift) at (6.1,-0.30) {{\ttfamily lift}, then $V$};
+  \node[font=\normalsize, inner sep=2pt] (lift) at (6.1,-0.30) {\figurekw{lift}, then $V$};
   \draw[->, accent] ([xshift=-2pt]lift.west) -- (3.0,-0.50);
   \draw[->, accentwarm] ([xshift=2pt]lift.east) -- (9.2,-0.50);
   \fill[lvl0soft] (0,-0.68) rectangle (5.9,-2.5);
-  \node[font=\large\bfseries, text=accent] at (2.95,-0.95) {record $1$ (safe, $g=\ket0$)};
+  \node[font=\large\bfseries, text=accent] at (2.95,-0.95) {record $1$ (safe, {\normalfont\textcolor{certink}{$g=\ket0$}})};
   \node at (2.95,-1.55) {$\dfrac{\alpha+\beta}{\sqrt2}\cdot\ket0\otimes\ket0$};
   \node at (2.95,-2.14) {weight $\lvert \alpha+\beta\rvert^2/2$};
   \fill[lvl1soft] (6.3,-0.68) rectangle (12.2,-2.5);

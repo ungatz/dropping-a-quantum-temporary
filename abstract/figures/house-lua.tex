@@ -4,7 +4,11 @@
 \setmainfont{Libertinus Serif}
 \setsansfont{Libertinus Sans}
 \setmathfont{Libertinus Math}[Scale=MatchUppercase]
-\IfFontExistsTF{Iosevka Custom}{\setmonofont{Iosevka Custom}[Scale=MatchLowercase]}{\setmonofont{Inconsolatazi4}[Scale=MatchLowercase]}
+\setmonofont{Iosevka Custom}[Scale=MatchLowercase]
+\IfFontExistsTF{Iosevka Custom Semibold}
+  {\newfontface\figurekwface{Iosevka Custom Semibold}[Scale=MatchLowercase]}
+  {\newcommand{\figurekwface}{\ttfamily\bfseries}}
+\newcommand{\figurekw}[1]{{\figurekwface #1}}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
 
 \newcommand{\Z}{\mathbb{Z}}

@@ -1,6 +1,6 @@
 LATEXMK ?= latexmk
 FIGURES := abstract-loan abstract-matrices abstract-records abstract-reflection abstract-summed criterion
-LUAFIGURES := abstract-loan-lua criterion-lua
+LUAFIGURES := abstract-loan-lua abstract-matrices-lua abstract-records-lua abstract-reflection-lua abstract-summed-lua criterion-lua
 FIGURE_PDFS := $(addprefix figures/,$(addsuffix .pdf,$(FIGURES) $(LUAFIGURES)))
 
 .PHONY: abstract figures clean

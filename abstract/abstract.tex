@@ -25,212 +25,239 @@
 
 \begin{abstract}
   A quantum program often allocates a temporary register, uses it,
-    and drops it. Compilers usually make such a drop safe by
-    uncomputing the temporary, running backwards the gates that acted
-    on it. We specify a safe drop by what can be observed: just before
+    and drops it. Compilers usually reclaim its qubits by uncomputing it,
+    running backwards the gates that acted on it. This can repeat much of the work
+    even when the drop was already safe. We specify a safe drop by what can be observed: just before
     the drop, no context can tell the program from one that prepared
     the temporary without the input. This holds exactly
     when the temporary ends in one fixed pure state at every input,
-    and then one gate on it alone restores its
+    and then at most one reflection on it alone restores its
     starting state. The test extends to programs that measure, one
-    sequence of outcomes at a time, and to borrowed registers. A
-    prototype compiler computes the gate and reuses the freed wire.
+    record of outcomes at a time, and to borrowed registers. A
+    prototype compiler to OpenQASM 3 computes the gate and reuses the freed wire.
 \end{abstract}
 
 \maketitle
+\hypersetup{citecolor=ink,linkcolor=ink,urlcolor=muted}
 
 \setlength{\abovedisplayskip}{2pt plus 1pt minus 1pt}
 \setlength{\belowdisplayskip}{2pt plus 1pt minus 1pt}
 \setlength{\abovedisplayshortskip}{2pt plus 1pt}
 \setlength{\belowdisplayshortskip}{2pt plus 1pt}
 \newcommand{\luafig}{\ifdefined\directlua -lua\fi}
+\definecolor{certink}{HTML}{6D3D85}
+\definecolor{stateink}{HTML}{006A7B}
+\definecolor{loanink}{HTML}{8C4A2F}
+\definecolor{returnink}{HTML}{007A59}
+\ifdefined\directlua
+  \IfFontExistsTF{Iosevka Custom Semibold}
+    {\newfontface\abstractkwface{Iosevka Custom Semibold}[Scale=MatchLowercase]}
+    {\newcommand{\abstractkwface}{\ttfamily\bfseries}}
+\else
+  \newcommand{\abstractkwface}{\ttfamily\bfseries}
+\fi
+\providecommand{\kw}[1]{}
+\renewcommand{\kw}[1]{{\upshape\abstractkwface #1}}
+\ifdefined\directlua\else
+  \DeclareUnicodeCharacter{03C8}{\ensuremath{\psi}}
+  \DeclareUnicodeCharacter{25A1}{\ensuremath{\square}}
+\fi
 \binoppenalty=10000
 \relpenalty=10000
 
 \section{Specifying a safe drop}\label{sec:problem}
 
-Programming with quantum data, at least in the pure setting, has by now a mature treatment in the programming
-languages literature, from categorical semantics to typed and circuit
+Programming with quantum data in the pure setting has a mature treatment in programming
+languages, from categorical semantics to typed and circuit
 languages~\cite{AbramskyCoecke2004,Selinger2004Towards,SelingerValiron2006,Paykin2017QWIRE}.
-Recent lines of work show how to add measurement to this pure setting as a computational
+Recent work adds measurement to that setting as a computational
 effect~\cite{Staton2015Effects,Heunen2022QIE,Carette2024QuantumEffect}. Discarding a register is one half of what
 measurement needs, and allocating one is the other. Unlike in the classical setting, discarding is
 not free. Copying classical data and discarding the copy does nothing, but on quantum data it
 is a measurement~\cite[\S3.4.1]{Heunen2022QIE}, and discarding a register can leave the rest
 mixed~\cite[\S2.1.2]{Heunen2022QIE}. This work is about the allocation and deallocation of registers
-holding quantum data. Consider two programs on a qubit $v$:
+holding quantum data. Consider two programs on a qubit \code{v}:
 \par\medskip\centerline{\small\ttfamily
 \begin{tabular}{@{}l@{\qquad\qquad}l@{}}
-prog a (v : [2]) : [2] \{ & prog b (v : [2]) : [2] \{\\
-\quad new t : [2] @ |0>; & \quad new t : [2] @ |0>;\\
+\kw{prog} a (v : [2]) : [2] \{ & \kw{prog} b (v : [2]) : [2] \{\\
+\quad \kw{new} t : [2] @ |0>; & \quad \kw{new} t : [2] @ |0>;\\
 \quad H t; & \quad H t; CX t v;\\
-\quad drop t; return v \} & \quad drop t; return v \}
+\quad \kw{drop} t; \kw{return} v \} & \quad \kw{drop} t; \kw{return} v \}
 \end{tabular}}\par\medskip\noindent
-Here \code{new t : [2] @ |0>} allocates a qubit $t$, of dimension $2$, in $|0\rangle$, and
-\code{drop t} ends its scope, hiding $t$ without a gate.
-In program (a), the Hadamard gate $H$ puts $t$ in the plus state $|{+}\rangle$, an equal
-superposition of $|0\rangle$ and $|1\rangle$, whatever $v$ held, and another $H$ would restore
-$|0\rangle$ without touching $v$. Program (b) adds \code{CX t v}, which flips $v$ when $t$ is $1$.
-On input $|0\rangle$ it leaves $t$ and $v$ in a Bell state, an equal superposition of $|00\rangle$
-and $|11\rangle$ that no two separate operations can prepare, so dropping $t$ leaves $v$ mixed. Lexical lifetimes of both $t$ end at the drop, so checking scopes
-alone accepts both. Since gates are unitary and can therefore be undone, compilers usually reclaim a temporary by
+Here \code{\kw{new} t : [2] @ |0>} allocates a qubit \code{t}, of dimension $2$, in $|0\rangle$, and
+\code{\kw{drop} t} ends its scope, hiding \code{t} without a gate.
+In program (a), the Hadamard gate $H$ puts \code{t} in the plus state $|{+}\rangle$, an equal
+superposition of $|0\rangle$ and $|1\rangle$, whatever \code{v} held, and another $H$ would restore
+$|0\rangle$ without touching \code{v}. Program (b) adds \code{CX t v}, which flips \code{v} when \code{t} is $1$.
+On input $|0\rangle$ it leaves \code{t} and \code{v} in a Bell state, an equal superposition of $|00\rangle$
+and $|11\rangle$ that no two separate operations can prepare, so dropping \code{t} leaves \code{v} mixed. In both programs, \code{t}'s lifetime ends at the drop, so scope checks accept both. Since gates are unitary and can therefore be undone, compilers usually reclaim a temporary by
 uncomputing it, running the computation that acted on it backwards~\cite[pp.~525--526]{Bennett1973Logical}\cite{Bennett1989TimeSpace,Bichsel2020Silq,Paradis2021Unqomp},
 which can take as many gates as the computation itself~\cite[\S1]{Liu2026Uncomputation}.
 Silq and Unqomp automate this by letting only \code{qfree} gates, which create no
 superposition, produce the temporary~\cite[\S4.4]{Bichsel2020Silq}\cite[\S2.2]{Paradis2021Unqomp}, so both refuse program (a), whose one $H$ is not \code{qfree}~\cite[\S6.2]{Paradis2021Unqomp}. We ask when one unitary on the dropped registers alone restores
 their allocation state, making the drop free.
 
-Now take any program $p$ that allocates a temporary $t$ in a pure
-state $\psi$, works on it and the input $v$ with measurement-free code $M$,
-and drops it. Beside $p$ we put an independent witness $\mathcal S(R,U)$. It prepares $t$
-by one gate $R$ on $t$ alone, and computes separately, by a gate $U$ on $v$ and fresh
-registers for any further temporaries of $M$, left implicit below:
+Now let $p$ allocate \code{t} in a pure state $\psi$, run measurement-free code $M$ on \code{t}
+and the input \code{v}, and drop \code{t}. Its independent witness $\mathcal S(R,U)$ prepares \code{t}
+by one gate $R$ on \code{t} alone, while a gate $U$ acts on \code{v} and fresh registers for $M$'s
+other temporaries, left implicit below:
 \[
 \begin{aligned}
-p(v)&=\code{new t : [d] @ }\psi\code{; }M\code{; drop t; return v},\\
-\mathcal S(R,U)(v)&=\code{new t : [d] @ }\psi\code{; }R\code{ t; }U\code{ v; drop t; return v}.
+p(v)&=\code{\kw{new} t : [d] @ ψ; M; \kw{drop} t; \kw{return} v},\\
+\mathcal S(R,U)(v)&=\code{\kw{new} t : [d] @ ψ; R t; U v; \kw{drop} t; \kw{return} v}.
 \end{aligned}
 \]
-We call the drop \emph{safe} if $p$ is equivalent to $\mathcal S(R,U)$ for some $R$ and $U$:
+We call the drop \emph{safe} if $p\equiv\mathcal S(R,U)$ for some $R$ and $U$:
 no closed context can tell the two programs apart just before the drop, with every
 register still visible. One pair serves every input: $\exists R,U\;\forall x$, as in
 RapunSL's $\exists P\;\forall|\psi\rangle$ for its leftover assertion~\cite[App.~B.3]{Matsushita2026RapunSL}. Registers are
 finite-dimensional over $\C$, and every unitary is a gate.
 
 \section{Checking the equivalence}\label{sec:idea}
-To decide the equivalence, we look just before the \code{drop}, at its \emph{site}. The program up to the
-site, its \emph{exposed prefix}, denotes a linear map $K$. It sends an input $x$ of $v$ to the joint
-state of all registers at the site. The registers dropped there, the \emph{block}, are listed first.
-Program (a) leaves $t$ in $|{+}\rangle$ beside the untouched input, and
+To decide the equivalence, we look just before the \code{\kw{drop}}, at its \emph{site}.
+We form its \emph{exposed prefix} by keeping registers hidden by earlier drops and renaming reused registers.
+The prefix's linear map $K$ sends the input $x$ of \code{v} to the joint state, with the dropped \emph{block} first.
+Program (a) leaves \code{t} in $|{+}\rangle$ beside the untouched input, and
 program (b) then entangles the two:
 \[K^{(a)}x=|{+}\rangle\otimes x,\qquad
 K^{(b)}x=\tfrac1{\sqrt2}\bigl(|0\rangle\otimes x+|1\rangle\otimes Xx\bigr).\]
 {\abovedisplayskip=1pt \belowdisplayskip=1pt \abovedisplayshortskip=1pt \belowdisplayshortskip=1pt
-\[\includegraphics[width=.72\linewidth]{figures/abstract-matrices}\]}%
+\[\includegraphics[width=.72\linewidth]{figures/abstract-matrices\luafig}\]}%
 The matrix $|0\rangle\otimes I$ acts first, on the input $x$. The upper
-two rows of each denotation, in blue, say what the program does to $v$ when $t$ reads $0$, and the
-lower two, in gold, what it does when $t$ reads $1$. We call these halves the \emph{slices} of
+two rows of each denotation, in blue, say what the program does to \code{v} when \code{t} reads \textcolor{accent}{$0$}, and the
+lower two, in gold, what it does when \code{t} reads \textcolor{accentwarm}{$1$}. We call these halves the \emph{slices} of
 $K$.
 
 \begin{wrapfigure}{r}{.54\linewidth}
 \centering\includegraphics[width=\linewidth]{figures/criterion\luafig}
 \Description{The program, its factorization and its witness have equivalent joint maps before the ground symbols marking drops. Triangles prepare states; fresh registers for U are omitted.}
 \end{wrapfigure}
-After the drop the hidden register remains, and we are asking whether it is left in one fixed pure state, independent of
-the input and uncorrelated with the rest. A \emph{context} asks this. It is a closed program with a hole for the prefix:
-it supplies the input, possibly entangled with its own reference register, may apply gates to what the hole returns, and
-reads every register, recording the weight of each outcome. One context is
-  \[\code{new v : [2] @ |0>; (t,v) = \{ $\square$ \}; CX t v; H t; return (t,v)}.\]
-  It undoes program (b)'s gates and reads $00$ with weight $1$, whereas around a witness, which leaves $t$ and $v$
-  independent, it reads $00$ at most half the time. Since contexts detect any correlation of $t$ with other registers,
-  the joint action of $M$ factors at a safe drop, whatever its code may be. Every branch does the same thing to the
-  remaining registers, here $v$, up to a number, possibly zero. So the slices are proportional (Kraus rank at most one,
-  a standard condition). Each is one matrix $W$, what the prefix did to the rest, times a coordinate of one
-  fixed pure state $g$ of the temporary. Thus $Kx=g\otimes Wx$ at every input $x$. In program (a) both slices are equal,
-  so $g$ is $|{+}\rangle$ and $W$ is the identity. In program (b) the slice at $1$ is the slice at $0$ followed by $X$,
-  and no number turns the identity into $X$. A safe program, its factorization and its witness agree until the drop, as
-  pictured (triangles prepare, ground symbols drop).
+A \emph{context} is a closed program with a hole for the prefix. It supplies the input,
+possibly entangled with a reference, may apply gates to the returned registers, and reads
+every register, recording each outcome's weight. For example,
+  \[\code{\kw{new} v : [2] @ |0>; (t,v) = \{ □ \}; CX t v; H t; \kw{return} (t,v)}.\]
+It undoes program (b)'s gates and reads $00$ with weight $1$, whereas around a witness,
+which leaves \code{t} and \code{v} independent, it reads $00$ at most half the time.
+Contexts can detect any correlation, so at a safe drop the slices are all multiples of one map $W$
+on the remaining registers. Their multipliers, possibly zero, are coordinates of one fixed pure
+state \textcolor{certink}{$g$} of the temporary, giving $Kx=\textcolor{certink}{g}\otimes Wx$ at every input $x$. In program (a) both slices are equal,
+so $g$ is $|{+}\rangle$ and $W$ is the identity. In program (b) the slice at $1$ is the slice at $0$
+followed by $X$, and no number turns the identity into $X$.
+In the picture, triangles prepare states and ground symbols drop registers.
 
 \begin{theorem}[without measurement]\label{thm:measurementfree}
-For a well-typed measurement-free program $p$ at a drop of only allocated
-temporaries, let $K$ be its exposed prefix's joint map and $\psi$ the pure
-allocation state. The following are equivalent.
+For a well-typed, measurement-free program $p$, let $K$ be its exposed map at a drop of only
+allocated temporaries and $\psi$ their pure allocation state. The following are equivalent.
 \begin{enumerate}[leftmargin=1.6em,itemsep=1pt,topsep=2pt,parsep=0pt]
-\item $p$ is equivalent to some independent witness $\mathcal S(R,U)$.
+\item $p\equiv\mathcal S(R,U)$ for some independent witness.
 \item $K=g\otimes W$ for a unit vector $g$ on the block and an isometry $W$ to all other
 registers.
 \item One unitary on the block alone restores $\psi$ at every input.
 \end{enumerate}
 \end{theorem}
 
-Deutsch--Jozsa shows why slices need only be proportional, not exactly equal. Its oracle $O_f$ flips the temporary
-wherever a function $f$ is $1$ on the data $z$. The temporary is prepared in the minus state $|{-}\rangle$, which a flip
-only negates. So $O_f(|{-}\rangle\otimes|z\rangle)=|{-}\rangle\otimes(-1)^{f(z)}|z\rangle$, and the values of $f$ land
-on the data as signs. Write $D=\operatorname{diag}((-1)^{f(z)})$ in the data basis. The upper slice is
-$D/\sqrt2$ and the lower is $-D/\sqrt2$. Whatever $f$ is, the slices are proportional, and $t$ ends
-in $|{-}\rangle$ at every input.
+Deutsch--Jozsa shows why slices need only be proportional, not equal. Its oracle $O_f$ flips the temporary
+when $f(z)=1$. Prepared in the minus state $|{-}\rangle$, the temporary is only negated by a flip,
+so the oracle leaves it in $|{-}\rangle$ and puts the sign $(-1)^{f(z)}$ on the data state $|z\rangle$.
+These signs define a data gate $D_f$, with $D_f|z\rangle=(-1)^{f(z)}|z\rangle$.
+Since $|{-}\rangle=(|0\rangle-|1\rangle)/\sqrt2$, the upper slice is $D_f/\sqrt2$ and the lower is $-D_f/\sqrt2$.
+The slices are proportional for every $f$, and \code{t} ends in $|{-}\rangle$ at every input.
 
 \needspace{6\baselineskip}
 \begin{wrapfigure}{r}{.36\linewidth}
-\centering\includegraphics[width=\linewidth]{figures/abstract-reflection}
-\Description{The Householder reflection exchanges g-tilde and psi through the mirror orthogonal to n.}
+\centering\includegraphics[width=\linewidth]{figures/abstract-reflection\luafig}
+\Description{The Householder reflection exchanges g-tilde and psi through the mirror orthogonal to their difference Delta.}
 \end{wrapfigure}
-To reuse $t$ we need the return gate $T$ of clause (3), and we build it from $g$, which we
-call a \emph{certificate}. The factorization fixes $g$ only up to a phase, so we choose the representative
-$\tilde g$ whose overlap with $\psi$ is real and nonnegative, moving the phase into $W$. If
-$\tilde g$ is $\psi$, no gate is needed, which is what safe use~\cite[Eq.~(1)]{Liu2026Uncomputation} and clean
-safety~\cite[Def.~1]{Li2026AncillaSafety} require of every clean ancilla. Otherwise the pictured Householder
-reflection~\cite[p.~340, Eqs.~\mbox{(3)--(4)}]{Householder1958Triangularization}, whose mirror is
-orthogonal to the difference $n$ of $\psi$ and $\tilde g$, exchanges the two. Applied to the
-temporary alone, $T$ thus returns it to $\psi$ at every input, leaving the rest unchanged. Being
-its own inverse, it serves as a witness's $R$. Conversely, a witness leaves $t$ in $R\psi$
-whatever $v$ held, and a context may undo $R$ and look at $t$, so undoing $R$ restores $p$'s
-temporary. For program (a), $T$ is $H$, and
-Grover's diffusion~\cite[\S4]{Grover1996Search} is $-T$ when $n$ is uniform.
+To reuse \code{t}, we build the return gate $T$ from \textcolor{certink}{$g$}, our \emph{certificate}.
+The factorization fixes \textcolor{certink}{$g$} only up to a phase, so choose
+$\textcolor{certink}{\tilde g}$ whose overlap with $\textcolor{stateink}{\psi}$ is real and nonnegative, moving the phase into $W$.
+The difference $\Delta=\textcolor{stateink}{\psi}-\textcolor{certink}{\tilde g}$ points from the certificate to the allocation state.
+If \textcolor{certink}{$\tilde g$} is \textcolor{stateink}{$\psi$}, no gate is needed, as safe use~\cite[Eq.~(1)]{Liu2026Uncomputation}
+and clean safety~\cite[Def.~1]{Li2026AncillaSafety} require of every clean ancilla.
+Otherwise the Householder reflection $T$ through the pictured mirror orthogonal to
+$\Delta$~\cite[p.~340, Eqs.~\mbox{(3)--(4)}]{Householder1958Triangularization}
+sends \textcolor{certink}{$\tilde g$} to \textcolor{stateink}{$\psi$} on the temporary alone, leaving the rest unchanged.
+The witness's preparation gate $R$ maps \textcolor{stateink}{$\psi$} to \textcolor{certink}{$\tilde g$}.
+This reflection is its own inverse, so we can choose $R=T$.
+For any witness, undoing $R$ gives a return gate $T=R^\dagger$, since a context must then
+find $\psi$ in $p$ as it does in the witness.
+For program (a), $T$ is $H$, and Grover's diffusion~\cite[\S4]{Grover1996Search} is $-T$ when $\Delta$ is uniform.
 
 \section{One measurement record at a time}\label{sec:results}
 
-With measurement, a program can be safe on one sequence of outcomes and unsafe on another. Our \code{lift} measures a
-register and, as in dynamic lifting~\cite{Fu2023DynamicLifting}, binds an outcome that only classical \code{if} guards
-can read. In \code{lift[\{0\}]~t}, outcome $1$ means that $t$ was read as $0$, and outcome $0$ means it was
+With measurement, a program can be safe on one sequence of outcomes and unsafe on another. Our \code{\kw{lift}} measures a
+register and, as in dynamic lifting~\cite{Fu2023DynamicLifting}, binds an outcome that only classical \code{\kw{if}} guards
+can read. In \code{\kw{lift}[\{0\}]~t}, outcome $1$ means that \code{t} was read as $0$, and outcome $0$ means it was
 read as $1$. A \emph{record} $o$ lists the
 outcomes along one path through the program. Its exposed map $K_o$ is the denotation along that path, left unnormalized,
 so that $\|K_ox\|^2$ is the probability of the path at a normalized input $x$.
 
 \par\medskip\centerline{\small\ttfamily
-\begin{tabular}{@{}l@{}}
-prog c (v : [2]) : [2] \{\\
-\quad new t : [2] @ |0>; H v; CX v t;\\
-\quad k = lift[\{0\}] t; V t v; drop t; return v \}
+\begin{tabular}{@{}l@{\qquad}l@{}}
+\kw{prog} c (v : [2]) : [2] \{ & \kw{prog} witness (v : [2]) : [2] \{\\
+\quad \kw{new} t : [2] @ |0>; H v; CX v t; &
+\quad \kw{new} t : [2] @ |0>; \kw{new} a : [2] @ |0>; H v; CX v a;\\
+\quad k = \kw{lift}[\{0\}] t; V t v; \kw{drop} t; \kw{return} v \} &
+\quad k = \kw{lift}[\{0\}] a; \kw{drop} a; \kw{drop} t; \kw{return} v \}
 \end{tabular}}\par\medskip
 
-Take the listed program (c), with $t$ first, at input $x=\alpha|0\rangle+\beta|1\rangle$. The top line of the picture is
-its state after $H$ and the copy into $t$. The measurement keeps one of the two terms, and $V$ then fixes $|00\rangle$
-and turns $|11\rangle$ into a Bell state. Each record is one amplitude times a unit vector, and its weight is that
-amplitude's squared magnitude.
 \begin{figure}[tbp]
-\centering\includegraphics[width=.66\linewidth]{figures/abstract-records}
+\centering\includegraphics[width=.66\linewidth]{figures/abstract-records\luafig}
 \Description{Program c before measurement, and its two records after the lift and V: record 1 is a multiple of the state 00, record 0 a multiple of the Bell state on 01 and 10, each with its weight.}
 \end{figure}
 
-On record $1$ the slices are again proportional: $t$ ends in $|0\rangle$, and the $2\times2$ map on $v$ is
-$W_1=|0\rangle\langle{+}|$. $W_1$ keeps only the $|{+}\rangle$ part of $x$, so it is a \emph{contraction}, which
-lengthens no vector. The squared lengths it leaves, $1$ at $|{+}\rangle$ and $1/2$ at $|0\rangle$, are record $1$'s
-weights. Normalizing hides them. Allocations and gates preserve length, so a witness for record $1$ must measure
-too, keeping one outcome of a measured helper with the same weight. We call record $o$ \emph{safe} when no context tells
-$p$'s record $o$ from the witness's kept outcome, both unnormalized and the helper ignored, whatever other records do.
+The picture follows program (c), with \code{t} first, at input $x=\alpha|0\rangle+\beta|1\rangle$.
+After $H$ and the copy into \code{t}, the measurement keeps one term. Then $V$ fixes $|00\rangle$
+on \textcolor{accent}{record $1$} and turns $|11\rangle$ into a Bell state on \textcolor{accentwarm}{record $0$}.
+Each pictured weight is the squared magnitude of that term's coefficient.
+
+On \textcolor{accent}{record $1$}, the slices are $\textcolor{accent}{W_1}=|0\rangle\langle{+}|$ and $0$, so \code{t} is fixed at $|0\rangle$. $W_1$ gives $|0\rangle$ with weight $1$ at $x=|{+}\rangle$,
+and $|0\rangle/\sqrt2$ with weight $1/2$ at $x=|0\rangle$. Normalizing gives $|0\rangle$ in both
+cases and hides this dependence on the input. Since $W_1$ never lengthens a vector, it is a
+\emph{contraction}. Allocating the witness's \code{t} and \code{a} in $|0\rangle$ and applying \code{H v; CX v a}
+preserve total weight, so it needs a measurement to reproduce record $1$.
+Measuring its independent \code{t} would give the same probability at every input, so it measures
+\code{a} instead. Outcome $1$ of \code{\kw{lift}[\{0\}]~a} leaves \code{t} and \code{a} in $|0\rangle$ and \code{v} in $W_1x$,
+with record $1$'s weight. Thus $R=I$.
+
+The same construction works whenever $K_ox=\textcolor{certink}{g}\otimes W_ox$ with $W_o$ a contraction.
+The helper's other outcome carries the squared length missing from $W_ox$.
+With fresh registers to match the input and output spaces, the two outcomes preserve norm
+and extend to a unitary $U$~\cite[Thm.~2]{Robinson2018Julia}. One \code{\kw{lift}} selects $W_ox$,
+while $R$ prepares \textcolor{certink}{$g$} from $\textcolor{stateink}{\psi}$ on the block.
+We call record $o$ \emph{safe} and write $p\equiv_o\mathcal S(R,U)$ when no context distinguishes
+these selected, unnormalized maps before the drop, ignoring the fixed helper.
+Other records may differ.
 
 \begin{samepage}
 \begin{theorem}[on a selected record]\label{thm:perrecord}
-Let the site $s$ drop only allocated temporaries in a well-typed program $p$, and let
-$o$ be a record whose path executes $s$, with exposed map $K_o$ at $s$. The following are
-equivalent.
+Let $K_o$ be the exposed map on a record $o$ reaching a drop of only allocated temporaries
+in a well-typed program $p$. The following are equivalent.
 \begin{enumerate}[leftmargin=1.6em,itemsep=1pt,topsep=2pt,parsep=0pt]
-\item Record $o$ is safe, with an independent witness that uses one \code{lift}.
+\item $p\equiv_o\mathcal S(R,U)$ for some independent witness using one \code{\kw{lift}}.
 \item $K_o=g\otimes W_o$ for a unit vector $g$ on the block and a contraction $W_o$ to all
 other registers.
 \item One unitary on the block alone restores its pure allocation state
 $\psi$ at every input on $o$.
 \end{enumerate}
+Zero maps satisfy the three conditions, and return gates may differ between records.
 \end{theorem}
 \end{samepage}
 
-Contexts cannot read the records, so on a whole program a
-context sees only the average over records, the \emph{summed channel}~\cite[\S2.3.2]{Watrous2018TQI}:
-the records' states of the returned registers and a reference, weighted by their probabilities.
-One may hope that this average decides safety. It does not. Before \code{drop t}, at input
-$x=\alpha|0\rangle+\beta|1\rangle$, the two programs below leave these unnormalized
-states on records $1$ and $0$:
+Contexts cannot read records, so they see the \emph{summed channel}~\cite[\S2.3.2]{Watrous2018TQI}, the mixture on
+returned registers and a reference weighted by record probabilities. That mixture does not determine safety.
+At input $x=\alpha|0\rangle+\beta|1\rangle$, the programs below leave these unnormalized states on
+records \textcolor{accent}{$1$} and \textcolor{accentwarm}{$0$} before \code{\kw{drop} t}:
 \[
 \begin{array}{c@{\quad}c@{\quad}c@{\quad}l}
-\raisebox{-.3\height}{\includegraphics[page=1,scale=1.05]{figures/abstract-summed}}
+\raisebox{-.3\height}{\includegraphics[page=1,scale=1.05]{figures/abstract-summed\luafig}}
  & {\color{accent}|0\rangle\otimes x/\sqrt2} & {\color{accentwarm}|1\rangle\otimes Zx/\sqrt2} & \text{safe on both}\\[2pt]
-\raisebox{-.3\height}{\includegraphics[page=2,scale=1.05]{figures/abstract-summed}}
+\raisebox{-.3\height}{\includegraphics[page=2,scale=1.05]{figures/abstract-summed\luafig}}
  & {\color{accent}(\alpha|00\rangle+\beta|11\rangle)/\sqrt2}
  & {\color{accentwarm}(\alpha|10\rangle+\beta|01\rangle)/\sqrt2} & \text{safe on neither}
 \end{array}
 \]
-Summed over records, both programs act on $v$ as a standard-basis measurement, and every record has probability $1/2$
+Summed over records, both programs act on \code{v} as a standard-basis measurement, and every record has probability $1/2$
 at every input, so only the per-record states tell them apart.
 
 \section{Blocks and loans}\label{sec:loans}
@@ -239,13 +266,11 @@ Dropping a tuple tests the named registers together. A Bell pair prepared in two
 untouched is safe as a block of two, since the pair has one fixed state
 vector, though each half alone has the mixed state $I/2$ and so supplies no pure certificate.
 
-We also consider blocks containing \emph{loans}, registers borrowed in
-unknown states, possibly entangled with their caller, who
-expects them back as they were. The witness cannot prepare such a
-block, since it does not know the loan's state $\ell$. Instead $\mathcal S(R,U)$ receives $\ell$,
-allocates the temporaries beside it (the map $J\ell=\ell\otimes\psi$, with loans first), applies $R$ to the
-whole block, and lets $U$ act only outside it. The fixed certificate $g$, a map from $\C$ into the block,
-becomes an isometry $B$ from the loan's space into the block's. The drop is then safe exactly when
+We also consider blocks containing \emph{loans}, registers borrowed in unknown states,
+possibly entangled with their caller, who expects them back unchanged.
+The witness $\mathcal S(R,U)$ therefore receives the loan's state $\ell$, allocates the temporaries
+beside it (the map $J\ell=\ell\otimes\psi$, with loans first), applies $R$ to the whole block,
+and lets $U$ act only outside it. The fixed certificate $g$ becomes an isometry $B$ from the loan's space into the block's. The drop is then safe exactly when
 $K=B\otimes W$. The witness exists because a unitary $R$ of the block carries the isometry $J$ onto $B$,
 $RJ=B$, and the return gate $T=\smash[t]{R^\dagger}$ satisfies $TB=J$.
 
@@ -255,15 +280,15 @@ reference together are uncorrelated with its other inputs, the gate restores the
 that occurs. Otherwise a record can change it.
 
 For program
-\code{lend}, with loan $l$ in state $\ell$, we have $B\ell=X\ell\otimes|{+}\rangle$, and the inserted
-$T=X\otimes H$ hands the unknown loan back to the caller at the drop and restores $t$.
+\code{lend}, with loan \textcolor{loanink}{\code{l}} in state \textcolor{loanink}{$\ell$}, we have $B\ell=X\ell\otimes|{+}\rangle$, and the inserted
+\textcolor{returnink}{$T=X\otimes H$} hands the unknown loan back to the caller at the drop and restores \code{t}.
 \par\noindent\begin{minipage}[c]{.44\linewidth}
 \small\ttfamily
 \begin{tabular}{@{}l@{}}
-prog lend (loan l : [2]) : 1 \{\\
-\quad new t : [2] @ |0>;\\
+\kw{prog} lend (\kw{loan} l : [2]) : 1 \{\\
+\quad \kw{new} t : [2] @ |0>;\\
 \quad H t; X l;\\
-\quad drop (l,t); return () \}
+\quad \kw{drop} (l,t); \kw{return} () \}
 \end{tabular}
 \end{minipage}\hfill
 \begin{minipage}[c]{.46\linewidth}\centering
@@ -276,7 +301,7 @@ The language is linear and first order.
 We prove progress and preservation for its abstract
 machine with lifting and classical guards, and extend it to restore a safe block on
 each record and pool its temporaries for a
-later \code{new} of matching dimension and state. Reuse preserves the records, their
+later \code{\kw{new}} of matching dimension and state. Reuse preserves the records, their
 weights and, on each record, the reduced state of the returned
 registers. Our Haskell checkers compute exactly. One builds
 $K_o$ at one-temporary sites, and the other runs the program on the basis inputs and their sum and asks that each block
@@ -289,13 +314,13 @@ leave different block values.
 
 Our OpenQASM~3 compiler uses the second check, computes return
 gates, and reuses basis-allocated blocks safe
-on every record. If program (a) ends with \code{new y : [2] @ |1>; return (v,y)} instead, its
-circuit uses two qubits where fresh allocation uses three: the return gate $H$ restores $t$, and $X$
-prepares $y$ on $t$'s wire. Measuring $t$ and resetting it to $|0\rangle$, as qubit-reuse
+on every record. If program (a) ends with \code{\kw{new} y : [2] @ |1>; \kw{return} (v,y)} instead, its
+circuit uses two qubits where fresh allocation uses three: the return gate $H$ restores \code{t}, and $X$
+prepares \code{y} on \code{t}'s wire. Measuring \code{t} and resetting it to $|0\rangle$, as qubit-reuse
 compilers do~\cite{DeCross2023QubitReuse,Hua2023CaQR}, would save the qubit too, but a reset
 destroys a loan's state, which the return gate hands back. Only basis allocations
-compile, program (c)'s $V$ is unsupported, and no loan may be dropped after a \code{lift} or an
-\code{if}. Return gates are numerical, and for a general loan return, $TB=J$ is checked
+compile, program (c)'s $V$ is unsupported, and no loan may be dropped after a \code{\kw{lift}} or an
+\code{\kw{if}}. Return gates are numerical, and for a general loan return, $TB=J$ is checked
 entrywise, to within $10^{-9}$.
 
 Testing the state a temporary ends in, not the gates that produced it, our criterion
@@ -309,7 +334,7 @@ measurement-free circuits with $|0\rangle$
 ancillas, the validity test of slices summing to a
 unitary~\cite[Def.~3.1]{Liu2026Uncomputation} is incomparable with
 safety, as program (a)'s slices sum to $\sqrt2 I$, yet its drop is safe,
-and those of \code{new t : [2] @ |0>; CX v t; drop t} sum to $I$, yet its
+and those of \code{\kw{new} t : [2] @ |0>; CX v t; \kw{drop} t} sum to $I$, yet its
 drop is unsafe. QBorrow needs the loan back untouched after each denoted
 operation~\cite[Def.~5.1]{Su2025Borrowing} and Bona after each borrowing
 body~\cite[Def.~3.2]{Xu2026Bona}, and separation logics prove its return by
@@ -318,8 +343,8 @@ hand~\cite{Matsushita2026RapunSL,Su2024Heap}. Our return gate undoes any isometr
 We did not consider loops or quantum recursion. What certifies a temporary dropped after a loop,
 possibly in superposition, is open. We also took every unitary to be a gate, but a fixed
 gate set may lack the return gate. Circuits of $X$, \code{CX}, Toffoli and $H\otimes H$ have
-dyadic entries~\cite[Cor.~5.6]{Amy2020Restricted}. After $H\otimes H$ on $t$
-and $v$ the drop of $t$ is safe, yet no such circuit on $t$ alone restores it, since that needs the
+dyadic entries~\cite[Cor.~5.6]{Amy2020Restricted}. After $H\otimes H$ on \code{t}
+and \code{v} the drop of \code{t} is safe, yet no such circuit on \code{t} alone restores it, since that needs the
 non-dyadic entries $\pm1/\sqrt2$.
 
 \clearpage

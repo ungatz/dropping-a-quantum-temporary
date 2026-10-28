@@ -63,7 +63,7 @@ type Corpus = [(FilePath, Either String String)]
 -- The corpus is read once; a path is the key.
 -- >>> corpus <- readCorpus
 -- >>> length corpus
--- 19
+-- 20
 -- >>> take 1 (map fst corpus)
 -- ["programs/dj.s"]
 
@@ -71,7 +71,7 @@ type Corpus = [(FilePath, Either String String)]
 -- suite is run.
 progFiles :: [FilePath]
 progFiles = map ("programs/" ++)
-  [ "dj.s", "grover.s", "qpe.s", "teleport.s", "rus.s"
+  [ "dj.s", "grover.s", "qpe.s", "teleport.s", "rus.s", "record-parity.s"
   , "superdense.s", "mcx-dirty.s", "mcx-dirty-x.s", "mcx-dirty-half.s"
   , "shor.s", "simon.s", "temp-and.s"
   , "temp-general.s"
@@ -83,7 +83,7 @@ progFiles = map ("programs/" ++)
 -- >>> take 3 progFiles
 -- ["programs/dj.s","programs/grover.s","programs/qpe.s"]
 -- >>> length progFiles
--- 19
+-- 20
 
 -- | Read the named files; one that cannot be read keeps the reason.
 readFiles :: [FilePath] -> IO Corpus
@@ -505,7 +505,7 @@ checks corpus = concat
 -- The whole group: every list below, in this order.
 -- >>> corpus <- readCorpus
 -- >>> length (checks corpus)
--- 127
+-- 131
 -- >>> all snd (checks corpus)
 -- True
 
@@ -607,6 +607,16 @@ valueChecks corpus =
     , verdictOf corpus "programs/c.s" "t" [SIn]  == Just Safe
       && verdictOf corpus "programs/c.s" "t" [SOut] == Just Unsafe
       && parkedRecOf corpus "programs/c.s" "t" [SIn] == Just [1, 0] )
+  , ( "record-parity.s: the full record decides drop t, with every record reachable"
+    , case parsed corpus "programs/record-parity.s" of
+        Right (vis, prog) ->
+          and [ verdictOf corpus "programs/record-parity.s" "t" sel == Just v
+                && branchWeight vis prog "t" sel (ket [2] [0]) == 1 / 4
+              | (sel, v) <- [ ([SIn, SIn], Safe), ([SIn, SOut], Unsafe)
+                            , ([SOut, SIn], Unsafe), ([SOut, SOut], Safe) ] ]
+          && parkedRecOf corpus "programs/record-parity.s" "t" [SIn, SIn] == Just [1, 0]
+          && parkedRecOf corpus "programs/record-parity.s" "t" [SOut, SOut] == Just [0, 1]
+        Left _ -> False )
   , ( "copy-input.s: the program that copies its input and forgets it is refused"
     , verdictOf corpus "programs/copy-input.s" "x" [] == Just Unsafe )
   , ( "learns-nothing.s: one site, unsafe, and the input is untouched"
@@ -642,7 +652,7 @@ valueChecks corpus =
 -- >>> take 2 (map fst (valueChecks corpus))
 -- ["DJ with its lift: the block {0} of x carries weight 0 on |0>, f = x being balanced","grover.s lands exactly on the marked item |11>"]
 -- >>> length (valueChecks corpus)
--- 9
+-- 10
 
 -- | The borrowed loan: the drop's certificate is the fixed gate B it is
 -- reclaimed with (a loan carries no state to report a "line" of), and

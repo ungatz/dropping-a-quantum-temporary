@@ -56,7 +56,7 @@ sites corpus = [ (f, vis, prog, x) | (f, vis, prog) <- programs corpus, [x] <- d
 -- Single-register drop sites only: a tuple drop is not among them.
 -- >>> corpus <- readCorpus
 -- >>> length (sites corpus)
--- 20
+-- 21
 -- >>> [ (f, x) | (f, _, _, x) <- take 4 (sites corpus) ]
 -- [("programs/dj.s","t"),("programs/grover.s","t"),("programs/qpe.s","psi"),("programs/teleport.s","m")]
 
