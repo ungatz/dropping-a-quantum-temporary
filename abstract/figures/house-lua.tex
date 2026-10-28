@@ -4,10 +4,8 @@
 \setmainfont{Libertinus Serif}
 \setsansfont{Libertinus Sans}
 \setmathfont{Libertinus Math}[Scale=MatchUppercase]
-\setmonofont{Iosevka Custom}[Scale=MatchLowercase]
-\IfFontExistsTF{Iosevka Custom Semibold}
-  {\newfontface\figurekwface{Iosevka Custom Semibold}[Scale=MatchLowercase]}
-  {\newcommand{\figurekwface}{\ttfamily\bfseries}}
+\setmonofont{JetBrains Mono}[Scale=MatchLowercase,RawFeature={-liga,-calt,-clig,-dlig}]
+\newfontface\figurekwface{JetBrains Mono SemiBold}[Scale=MatchLowercase,RawFeature={-liga,-calt,-clig,-dlig}]
 \newcommand{\figurekw}[1]{{\figurekwface #1}}
 \usetikzlibrary{positioning,arrows.meta,fit,backgrounds,calc}
 

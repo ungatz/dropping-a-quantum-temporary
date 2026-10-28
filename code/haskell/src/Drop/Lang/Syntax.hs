@@ -55,13 +55,12 @@ data Value
   deriving (Eq, Show)
 
 -- | Boolean guards over lifted bits: the syntax figure's
--- @e ::= p | not e | e1 and e2 | e1 or e2@.
+-- @e ::= b | p | not e | e1 and e2 | e1 or e2@.
 --
--- 'BLit' is not a guard a program file can write. It is what
+-- 'BLit' is a bit constant a program file writes as 0 or 1. It is also what
 -- \\textsc{Step-Lift}'s substitution @M[b/p]@ puts in place of the parameter
 -- it consumes, so that \\textsc{Step-If}'s guard is CLOSED, as the machine's
--- rule requires. No parser produces it and no typing rule needs a parameter
--- for it.
+-- rule requires. A bit constant needs no parameter in scope.
 data BExpr
   = BParam Name
   | BNot BExpr

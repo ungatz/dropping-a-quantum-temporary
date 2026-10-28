@@ -34,6 +34,30 @@ result[0] = measure q[{result_qubit}];
 
 
 class ReuseChannelTests(unittest.TestCase):
+    def test_zero_wire_unit_return_has_weight_one(self):
+        data = {
+            "freshQubits": 0, "reuseQubits": 0, "wires": [],
+            "returns": [[]], "lifts": [], "sites": [],
+        }
+        for mode in ("fresh", "reuse"):
+            for body in ("", "gphase(pi/2);"):
+                with self.subTest(mode=mode, body=body):
+                    records, gates, lifts, reads = checker.channels(
+                        "OPENQASM 3.0;\n" + body, data, mode)
+                    self.assertEqual(set(records), {()})
+                    self.assertTrue(np.allclose(records[()], [[1]]))
+                    self.assertEqual(gates, int(bool(body)))
+                    self.assertEqual((lifts, reads), (0, 0))
+
+    def test_missing_wires_for_positive_width_is_refused(self):
+        data = {
+            "freshQubits": 1, "reuseQubits": 1, "wires": [],
+            "returns": [[]], "lifts": [], "sites": [],
+        }
+        program = checker.sim.Program(openqasm3.parse("OPENQASM 3.0; qubit[1] q;"))
+        with self.assertRaisesRegex(ValueError, "no wires"):
+            checker.validate_allocation(data, program, "fresh")
+
     def test_temporary_wire_mappings_may_repeat_but_scratch_begins_as_zero(self):
         data = allocation()
         data["wires"].append(

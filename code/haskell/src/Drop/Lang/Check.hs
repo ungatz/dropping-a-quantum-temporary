@@ -22,12 +22,13 @@ module Drop.Lang.Check
   , checkSurface
   , check
   , checkProgram
+  , checkCapacity
   , loanDiscipline
   ) where
 
 import Data.List (nub)
 import qualified Data.Map.Strict as M
-import Drop.Lang.State (isUnitary, norm2S)
+import Drop.Lang.State (isUnitary, norm2S, dimensionSize)
 import Drop.Lang.Scalar (Conj)
 import Drop.Lang.Syntax
 
@@ -241,9 +242,11 @@ gateDimOf = length
 -- 2
 
 tyTotalDim :: Ty -> Int
-tyTotalDim TUnit         = 1
-tyTotalDim (TReg d)      = d
-tyTotalDim (TTensor a b) = tyTotalDim a * tyTotalDim b
+tyTotalDim = dimensionSize . dims
+  where
+    dims TUnit = []
+    dims (TReg d) = [d]
+    dims (TTensor a b) = dims a ++ dims b
 
 -- >>> tyTotalDim TUnit
 -- 1
@@ -439,9 +442,37 @@ checkSurface m ctx = checkTerm (toTerm m) ctx
 -- | @check :: Program -> Either TypeError Ty@, i.e. the judgement
 -- @x1:[d1], ..., xn:[dn] |- M : A@ the program header states.
 check :: (Eq a, Num a, Conj a) => Program a -> Either TypeError Ty
-check (Program vis m) = do
+check p@(Program vis m) = do
   mapM_ (uncurry checkDim) vis
+  case [ x | (i, (x, _)) <- zip [0 :: Int ..] vis, x `elem` map fst (take i vis) ] of
+    x : _ -> Left (UsedTwice x)
+    [] -> Right ()
+  checkCapacity p
   checkSurface m (ctxFromList vis)
+
+-- | Bound the exposed state before any amplitude list is evaluated.
+-- Earlier drops retain their factors; alternatives contribute the larger path.
+checkCapacity :: Program a -> Either TypeError ()
+checkCapacity (Program vis body)
+  | total > toInteger (maxBound :: Int) =
+      Left (Other ("implementation limit: exposed state dimension " ++ show total
+                   ++ " exceeds the index range"))
+  | otherwise = Right ()
+  where
+    total = product (map (toInteger . snd) vis) * allocated body
+    allocated (SReturn _) = 1
+    allocated (SDo st rest) = factor st * allocated rest
+    allocated (SIf _ yes no) = max (allocated yes) (allocated no)
+    allocated (SBlock _ first rest) = allocated first * allocated rest
+    factor (StNew _ d _) = toInteger (max 1 d)
+    factor (StLoan _ d) = toInteger (max 1 d)
+    factor _ = 1
+
+-- >>> checkCapacity (Program [] (SReturn VUnit) :: Program Rational)
+-- Right ()
+-- >>> let huge = Program [("x", maxBound), ("y", 2)] (SReturn VUnit) :: Program Rational
+-- >>> case checkCapacity huge of { Left (Other _) -> True; _ -> False }
+-- True
 
 -- >>> check (Program [("x", 2)] (SReturn (VVar "x")) :: Program Rational)
 -- Right (TReg 2)

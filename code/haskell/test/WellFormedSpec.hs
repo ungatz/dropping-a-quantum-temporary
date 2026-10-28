@@ -11,7 +11,8 @@
 --           safe. The suite gives one program per rule and per consumer
 --           (the flat engine, the statics, the five-rule machine, the
 --           compiler, the reports, the theory layer); each must be refused,
---           and the refusal must name what is wrong. 42 checks in six groups.
+--           and the refusal must name what is wrong. Parser boundary checks
+--           also cover integer limits, block names and gate value forms.
 -- Paper:    sec:lang:statics, sec:lang:dynamics, sec:lang:compile, app:implementation
 -- Shapes:   a flat program is a list of commands (Prog Cyclo); a typed
 --           program is a term (Program Cyclo); a theory program is a tree
@@ -29,6 +30,7 @@ import Drop.Lang.Gates (gCX, gHC, gX)
 import Drop.Lang.Interp
 import Drop.Lang.Criterion
 import qualified Drop.Lang.Machine as M
+import Drop.Lang.Parser (parseFile, parseProgram)
 import Drop.Lang.Render (renderCmd)
 import Drop.Lang.Pass (chain, chainStopped)
 import Drop.Lang.Report.Run (runText, typecheckText)
@@ -202,6 +204,74 @@ theoryLayerRefusesIllFormed c = do
   check1 c "Typing.checkGate is the premise Lifted reuses"
     (case TT.checkGate (TG.gHt 2) 3 2 of Left _ -> True; Right _ -> False)
 
+-- | The parser keeps source integers and names intact, and reads the gate
+-- values the grammar defines alongside the whitespace argument spelling.
+parserBoundaryChecks :: Counters -> IO ()
+parserBoundaryChecks c = do
+  putStrLn "(7) the parser boundary"
+  integerBoundaryChecks c
+  gateValueChecks c
+  leftWith c "a repeated name in a block pattern" "repeated register in block pattern"
+    (typecheckText "prog f (x : [2], y : [2]) : [2] * [2] { (z,z) = { return (x,y) }; return (z,y) }")
+  check1 c "distinct names in a block pattern remain accepted"
+    (typecheckText "prog f (x : [2], y : [2]) : [2] * [2] { (z,w) = { return (x,y) }; return (z,w) }"
+       == Right "f : [2] * [2]")
+
+-- | Dimensions and levels are checked before an Integer becomes an Int;
+-- products are checked before they can wrap to a smaller dimension.
+integerBoundaryChecks :: Counters -> IO ()
+integerBoundaryChecks c = do
+  let largest = show (maxBound :: Int)
+      firstBeyond = toInteger (maxBound :: Int) + 1
+      wrappedZero = show (2 * firstBeyond)
+      wrappedOne = show (2 * firstBeyond + 1)
+      wrappedTwo = show (2 * firstBeyond + 2)
+  leftWith c "the first integer beyond the Int range" "outside the supported range"
+    (typecheckText ("prog f (x : [" ++ show firstBeyond ++ "]) : [2] { return x }"))
+  leftWith c "a dimension literal above the Int range" "outside the supported range"
+    (typecheckText ("prog f (x : [" ++ wrappedTwo ++ "]) : [2] { return x }"))
+  leftWith c "a ket level above the Int range" "outside the supported range"
+    (typecheckText ("prog f () : [2] { new t : [2] @ |" ++ wrappedZero ++ ">; return t }"))
+  leftWith c "a lift level above the Int range" "outside the supported range"
+    (typecheckText ("prog f (x : [2]) : [2] { p = lift[{" ++ wrappedOne ++ "}] x; return x }"))
+  check1 c "the largest representable dimension literal parses without allocation"
+    (case parseFile ("prog f (x : [" ++ largest ++ "]) : [" ++ largest ++ "] { return x }") of
+       Right _ -> True
+       Left _  -> False)
+  leftWith c "a gate declaration's dimension product cannot wrap" "supported dimension range"
+    (parseFile ("gate V : [" ++ largest ++ "] * [2] = diag (1); prog f () : 1 { return () }"))
+  leftWith c "a gate argument's dimension product cannot wrap" "supported dimension range"
+    (parseFile ("prog f (x : [" ++ largest ++ "], y : [2]) : [" ++ largest
+                ++ "] * [2] { mat x y { 1 }; return (x,y) }"))
+
+-- | Unit, pair and nested-pair gate arguments name the same factors as
+-- their whitespace spellings; duplicate names are still refused.
+gateValueChecks :: Counters -> IO ()
+gateValueChecks c = do
+  let unit body = "prog f () : 1 { " ++ body ++ " return () }"
+      pair body = "prog f (x : [2], y : [2]) : [2] * [2] { " ++ body ++ " return (x,y) }"
+      same a b = case (parseProgram a, parseProgram b) of
+        (Right p, Right q) -> p == q
+        _                  -> False
+  check1 c "a declared phase gate acts on the unit value"
+    (typecheckText ("gate Phase : 1 = diag (i); " ++ unit "Phase (); ") == Right "f : 1")
+  mapM_ (\body -> check1 c ("a unit gate value: " ++ body)
+                     (typecheckText (unit body) == Right "f : 1"))
+    ["mat () { i };", "diag () (i);", "perm () (0);"]
+  check1 c "a named gate accepts nested pairs and unit factors"
+    (same (pair "CX (x,((),y));") (pair "CX x y;"))
+  check1 c "a diagonal gate accepts a pair and keeps whitespace arguments"
+    (same (pair "diag (x,y) (1,1,1,i);") (pair "diag x y (1,1,1,i);"))
+  check1 c "a permutation gate accepts a pair and keeps whitespace arguments"
+    (same (pair "perm (x,y) (0 1 3 2);") (pair "perm x y (0 1 3 2);"))
+  check1 c "a matrix gate accepts a pair and keeps whitespace arguments"
+    (same (pair "mat (x,y) { 1,0,0,0; 0,1,0,0; 0,0,1,0; 0,0,0,1 };")
+          (pair "mat x y { 1,0,0,0; 0,1,0,0; 0,0,1,0; 0,0,0,1 };"))
+  leftWith c "a gate value cannot name one register twice" "repeated register"
+    (typecheckText (pair "CX (x,(x,()));"))
+  leftWith c "a unit gate matrix still needs the unit dimension" "needs 1 entries"
+    (typecheckText (unit "diag () (1,1);"))
+
 main :: IO ()
 main = do
   c <- newCounters
@@ -211,6 +281,7 @@ main = do
   compilerRefusesIllFormed c
   reportsRefuseIllFormed c
   theoryLayerRefusesIllFormed c
+  parserBoundaryChecks c
   report c
 
 -- | A gate that is not unitary, so the Gate rule's premise fails.

@@ -5,6 +5,7 @@ compiler to OpenQASM 3. Two checkers decide each drop by different algorithms, o
 vectors (`src/Drop/Lang/`) and one on matrices (`src/Drop/Theory/`); `src/Drop/Bridge.hs`
 compares them. The drop checkers use exact arithmetic; the compiler computes return-gate
 parameters numerically. The library needs only `base` and `containers`.
+The typed checker and command line refuse state dimensions beyond the machine index range.
 
 ```
 cabal test                                 # the five test suites

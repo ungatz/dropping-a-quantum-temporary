@@ -84,8 +84,7 @@ def eval_expr(e):
         if op == "||":
             return bool(a) or bool(b)
         raise ValueError(f"unknown binary operator {op}")
-    if isinstance(e, qast.ParenthesizedExpression):
-        return eval_expr(e.expression)
+    # The pinned parser records parentheses through the expression tree's grouping.
     raise ValueError(f"cannot evaluate expression {e}")
 
 
@@ -223,6 +222,8 @@ def resolve_bit_target(target, creg_sizes):
 
 
 def eval_condition(cond, bits):
+    if isinstance(cond, qast.BooleanLiteral):
+        return cond.value
     if isinstance(cond, qast.BinaryExpression) and cond.op.name == "==":
         lhs = cond.lhs
         if isinstance(lhs, qast.IndexExpression):
@@ -241,20 +242,20 @@ def eval_condition(cond, bits):
         a = eval_condition(cond.lhs, bits)
         b = eval_condition(cond.rhs, bits)
         return (a and b) if cond.op.name == "&&" else (a or b)
-    if isinstance(cond, qast.ParenthesizedExpression):
-        return eval_condition(cond.expression, bits)
     raise ValueError(f"unsupported condition {cond}")
 
 
 class Program:
     def __init__(self, ast_prog):
-        self.nq = None
+        self.nq = 0
         self.creg_sizes = {}
         self.custom_gates = {}
         self.body = []
         for st in ast_prog.statements:
             if isinstance(st, qast.QubitDeclaration):
                 self.nq = int(eval_expr(st.size))
+                if self.nq <= 0:
+                    raise ValueError("quantum register width must be positive")
             elif isinstance(st, qast.ClassicalDeclaration) and isinstance(st.type, qast.BitType):
                 size = int(eval_expr(st.type.size)) if st.type.size is not None else 1
                 self.creg_sizes[st.identifier.name] = size
@@ -322,6 +323,11 @@ class Program:
             return out
         if isinstance(st, qast.QuantumGate):
             state2 = self.run_gate_call(st, state)
+            return self.run_stmts(rest, state2, bits)
+        if isinstance(st, qast.QuantumPhase):
+            if st.modifiers or st.qubits:
+                raise ValueError("only an unmodified zero-qubit gphase is supported")
+            state2 = state * np.exp(1j * eval_expr(st.argument))
             return self.run_stmts(rest, state2, bits)
         if isinstance(st, (qast.QuantumGateDefinition, qast.QubitDeclaration, qast.ClassicalDeclaration, qast.Include)):
             return self.run_stmts(rest, state, bits)

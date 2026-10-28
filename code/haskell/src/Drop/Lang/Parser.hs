@@ -33,7 +33,7 @@ import Data.List (nub)
 import Data.Maybe (listToMaybe, mapMaybe)
 import Data.Ratio ((%))
 import Drop.Lang.Scalar
-import Drop.Lang.State (Matrix, StateV, norm2S)
+import Drop.Lang.State (Matrix, StateV, dimensionProduct, norm2S)
 import Drop.Lang.Flat
 import Drop.Lang.Render
 import Drop.Lang.Elab (flatToProgramR)
@@ -179,16 +179,6 @@ branchBinder (IfBit _ t e)    = listToMaybe (mapMaybe branchBinder (t ++ e))
 -- >>> branchBinder (IfBit (GBit True) [Gate [[0, 1], [1, 0]] ["x"]] [Lift "m" "x" [0]] :: Cmd Cyclo)
 -- Just "lift"
 
--- | The line to report an error about a list of names at.
-lineOf :: [(Int, String)] -> Int
-lineOf ((n, _) : _) = n
-lineOf []           = 1
-
--- >>> lineOf [(3, "x"), (4, "y")]
--- 3
--- >>> lineOf []
--- 1
-
 -- Primitive parsers ---------------------------------------------------------
 
 -- | The next token must be this symbol; it is consumed.
@@ -233,7 +223,11 @@ identL ts = case ts of
 -- | A whole number, with the line it stands on.
 natL :: [LTok] -> Either String ((Int, Int), [LTok])
 natL ts = case ts of
-  ((n, TInt v) : r) -> Right ((n, fromInteger v), r)
+  ((n, TInt v) : r)
+    | v < 0 || v > toInteger (maxBound :: Int) ->
+        errLn n ("integer " ++ show v ++ " is outside the supported range 0.."
+                 ++ show (maxBound :: Int))
+    | otherwise -> Right ((n, fromInteger v), r)
   _ -> errAt ts "expected an integer"
 
 -- >>> tokenize "7 y" >>= natL
@@ -242,9 +236,13 @@ natL ts = case ts of
 -- >>> tokenize "y" >>= natL
 -- Left "line 1: expected an integer (found 'y')"
 
--- | One or more register names, stopping at the first non-word token.
+-- | A gate's registers: a value (unit, a name or nested pairs), or the
+-- whitespace-separated names used by the program files.
 regList :: [LTok] -> Either String ([(Int, String)], [LTok])
 regList ts0 = case ts0 of
+  ((n, TSym '(') : _) -> do
+    (v, rest) <- pValue ts0
+    Right ([(n, x) | x <- valueNames v], rest)
   ((n, TWord w) : r) -> do
     (more, ts1) <- opt r
     Right ((n, w) : more, ts1)
@@ -652,23 +650,25 @@ checkDim (n, d)
 -- | Register checks shared by every gate statement: distinct known
 -- registers. Returns the wire names, a line to report errors at, and the
 -- product dimension.
-gateRegs :: Scope -> String -> [(Int, String)] -> Either String ([String], Int, Int)
-gateRegs sc what regs = do
+gateRegs :: Scope -> String -> Int -> [(Int, String)] -> Either String ([String], Int, Int)
+gateRegs sc what ln regs = do
   found <- mapM (lookupReg sc) regs
   let names = map fst found
       dims  = map snd found
-      ln    = lineOf regs
   if length (nub names) /= length names
     then errLn ln ("repeated register in " ++ what)
-    else Right (names, ln, product dims)
+    else case dimensionProduct dims of
+      Nothing -> errLn ln ("register dimensions in " ++ what
+                           ++ " exceed the supported dimension range")
+      Just d  -> Right (names, ln, d)
 
--- >>> gateRegs (newScope [Param "x" 2 False, Param "y" 3 False]) "mat" [(1, "x"), (1, "y")]
+-- >>> gateRegs (newScope [Param "x" 2 False, Param "y" 3 False]) "mat" 1 [(1, "x"), (1, "y")]
 -- Right (["x","y"],1,6)
 
--- >>> gateRegs (newScope [Param "x" 2 False]) "mat" [(2, "x"), (2, "x")]
+-- >>> gateRegs (newScope [Param "x" 2 False]) "mat" 2 [(2, "x"), (2, "x")]
 -- Left "line 2: repeated register in mat"
 
--- >>> gateRegs (newScope [Param "x" 2 False]) "mat" [(2, "z")]
+-- >>> gateRegs (newScope [Param "x" 2 False]) "mat" 2 [(2, "z")]
 -- Left "line 2: unknown register 'z'"
 
 -- The declarations and the program header -----------------------------------
@@ -708,7 +708,10 @@ pDecls env ts = case ts of
     (_, r4)  <- expectSym '=' r3
     (m, r5)  <- pGateLit r4
     (_, r6)  <- expectSym ';' r5
-    let d = tyDim ty
+    d <- case tyDim ty of
+      Nothing -> errLn ln ("gate '" ++ nm
+                           ++ "' exceeds the supported dimension range")
+      Just n  -> Right n
     if nm `elem` map fst env
       then errLn ln ("gate '" ++ nm ++ "' is already declared")
       else if length m /= d
@@ -731,18 +734,21 @@ pDecls env ts = case ts of
 -- >>> tokenize "gate V : [3] = diag (1, 2); prog" >>= pDecls []
 -- Left "line 1: gate 'V' is declared at dimension 3 but its matrix is 2x2"
 
--- | The product of the dimensions a type names.
-tyDim :: Ty -> Int
-tyDim TUnit         = 1
-tyDim (TReg d)      = d
-tyDim (TTensor a b) = tyDim a * tyDim b
+-- | The product of the dimensions a type names, when it fits an index.
+tyDim :: Ty -> Maybe Int
+tyDim TUnit         = Just 1
+tyDim (TReg d)      = dimensionProduct [d]
+tyDim (TTensor a b) = do
+  da <- tyDim a
+  db <- tyDim b
+  dimensionProduct [da, db]
 
 -- >>> tyDim TUnit
--- 1
+-- Just 1
 -- >>> tyDim (TReg 3)
--- 3
+-- Just 3
 -- >>> tyDim (TTensor (TReg 2) (TTensor (TReg 3) (TReg 2)))
--- 12
+-- Just 12
 
 -- | The right-hand side of a gate declaration: a matrix, a diagonal or a
 -- permutation, written exactly as the corresponding statement writes it.
@@ -972,16 +978,18 @@ pBlock env sc ln p r = do
   (_, r3) <- expectSym ';' r2
   let names = valueNames p
       vs    = valueNames v
-  if length names /= length vs
-    -- refusal: the pattern binds a different number of names than the block returns
-    then errLn ln ("the block returns " ++ show (length vs)
-                   ++ " register(s), but the pattern binds " ++ show (length names))
-    else do
-      mapM_ (checkFresh sc1) [ (ln, x) | x <- names ]
-      let sc2 = sc1 { scBits = bitsBefore
-                    , scAlias = scAlias sc1 ++ zip names vs
-                    , scAllNames = scAllNames sc1 ++ names }
-      Right (cs, sc2, r3)
+  if length (nub names) /= length names
+    then errLn ln "repeated register in block pattern"
+    else if length names /= length vs
+      -- refusal: the pattern binds a different number of names than the block returns
+      then errLn ln ("the block returns " ++ show (length vs)
+                     ++ " register(s), but the pattern binds " ++ show (length names))
+      else do
+        mapM_ (checkFresh sc1) [ (ln, x) | x <- names ]
+        let sc2 = sc1 { scBits = bitsBefore
+                      , scAlias = scAlias sc1 ++ zip names vs
+                      , scAllNames = scAllNames sc1 ++ names }
+        Right (cs, sc2, r3)
 
 -- A block splices its statements and names the wire it returns.
 -- >>> fmap (map renderCmd . sfBody) (parseFile "prog f (x : [2]) : [2] {\n  y = { H x; return x };\n  return y\n}")
@@ -1306,7 +1314,7 @@ pGateStmt env sc ts0 = case ts0 of
     (rows, ts3) <- pRows ts2
     (_, ts4) <- expectSym '}' ts3
     let ts5 = case ts4 of ((_, TSym ';') : r) -> r; _ -> ts4
-    (names, ln, d) <- gateRegs sc "mat" regs
+    (names, ln, d) <- gateRegs sc "mat" (lineAt rest) regs
     if length rows /= d || any ((/= d) . length) rows
       then errLn ln ("mat over " ++ unwords names ++ " must be " ++ show d
                      ++ "x" ++ show d ++ ", got " ++ show (length rows)
@@ -1319,7 +1327,7 @@ pGateStmt env sc ts0 = case ts0 of
     (ss, ts3) <- pScalarList ts2
     (_, ts4) <- expectSym ')' ts3
     (_, ts5) <- expectSym ';' ts4
-    (names, ln, d) <- gateRegs sc "diag" regs
+    (names, ln, d) <- gateRegs sc "diag" (lineAt rest) regs
     if length ss /= d
       then errLn ln ("diag over " ++ unwords names ++ " needs " ++ show d
                      ++ " entries, got " ++ show (length ss))
@@ -1331,7 +1339,7 @@ pGateStmt env sc ts0 = case ts0 of
     (ps, ts3) <- pNatsSpace ts2
     (_, ts4) <- expectSym ')' ts3
     (_, ts5) <- expectSym ';' ts4
-    (names, ln, d) <- gateRegs sc "perm" regs
+    (names, ln, d) <- gateRegs sc "perm" (lineAt rest) regs
     let imgs = map snd ps
     if length imgs /= d
       then errLn ln ("perm over " ++ unwords names ++ " needs " ++ show d
@@ -1348,7 +1356,7 @@ pGateStmt env sc ts0 = case ts0 of
     Just m -> do
       (regs, ts1) <- regList rest
       (_, ts2)  <- expectSym ';' ts1
-      (names, _, d) <- gateRegs sc ("gate '" ++ nm ++ "'") regs
+      (names, _, d) <- gateRegs sc ("gate '" ++ nm ++ "'") (lineAt rest) regs
       if d /= length m
         then errLn ln ("gate '" ++ nm ++ "' has dimension " ++ show (length m)
                        ++ " but registers " ++ unwords names

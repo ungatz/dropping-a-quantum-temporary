@@ -30,7 +30,7 @@ probesFor vis =
   [ ("e" ++ show j, [ if k == j then 1 else 0 | k <- [0 .. dv - 1] ])
   | j <- [0 .. dv - 1] ]
   ++ [("sum", replicate dv 1)]
-  where dv = product (map snd vis)
+  where dv = dimensionSize (map snd vis)
 
 -- The visible basis plus the all-ones vector: dim + 1 test inputs.
 -- >>> map fst (probesFor [("x", 2), ("y", 2)] :: [(String, StateV Rational)])
@@ -341,7 +341,7 @@ loanEnvs regs =
 -- trivial tuple, dimension 1: "no other loans" still varies the visible
 -- register alone).
 basisTuples :: [(String, Int)] -> [[Int]]
-basisTuples regs = [ idxToLevels dims k | k <- [0 .. product dims - 1] ]
+basisTuples regs = [ idxToLevels dims k | k <- [0 .. dimensionSize dims - 1] ]
   where dims = map snd regs
 
 -- >>> basisTuples []
@@ -378,7 +378,7 @@ blockProbeState :: (Eq a, Num a)
 blockProbeState vis prog site sel blockLoans others vi oth lk =
   runStmts (initMachL vis visProbe env) prog sel (Just site)
   where
-    dv = product (map snd vis)
+    dv = dimensionSize (map snd vis)
     visProbe = ket [dv] [vi]
     env = [ (n, ket [dd] [i]) | ((n, dd), i) <- zip others oth ]
        ++ [ (n, ket [dd] [i])
@@ -467,7 +467,7 @@ loanResultS vis prog site sel
     blockLoans           = blockLoansAtS prog site
     others               = [ nd | nd@(n, _) <- loansBefore prog site
                            , n `notElem` map fst blockLoans ]
-    dLoan                = product (map snd blockLoans)
+    dLoan                = dimensionSize (map snd blockLoans)
     table                = loanProbeTable vis prog site sel blockLoans others
     (dBlock, cols, flat) = loanReshaped vis site blockLoans others table
 
@@ -497,8 +497,8 @@ loanProbeTable vis prog site sel blockLoans others =
   [ (k, blockProbeState vis prog site sel blockLoans others vi oth lk)
   | k@(vi, oth, lk) <- combos ]
   where
-    dv     = product (map snd vis)
-    dLoan  = product (map snd blockLoans)
+    dv     = dimensionSize (map snd vis)
+    dLoan  = dimensionSize (map snd blockLoans)
     combos = [ (vi, oth, lk)
              | vi <- [0 .. dv - 1], oth <- basisTuples others
              , lk <- [0 .. dLoan - 1] ]
@@ -520,15 +520,15 @@ loanReshaped :: Num a
 loanReshaped vis site blockLoans others table = (dBlock, dRest * dOther, bigFlat)
   where
     otherDims  = map snd others
-    dLoan      = product (map snd blockLoans)
-    dv         = product (map snd vis)
-    dOther     = dv * product otherDims
+    dLoan      = dimensionSize (map snd blockLoans)
+    dv         = dimensionSize (map snd vis)
+    dOther     = dimensionSize (dv : otherDims)
     m0         = snd (head' table)
     dimsAt     = mDims m0
     posBlock   = map (regPos m0) site
     -- impossible: posBlock holds indices of dimsAt, one per register of the site
-    dBlock     = product [ dimsAt !! p | p <- posBlock ]
-    dRest      = product [ dd | (i, dd) <- zip [0 :: Int ..] dimsAt
+    dBlock     = dimensionSize [ dimsAt !! p | p <- posBlock ]
+    dRest      = dimensionSize [ dd | (i, dd) <- zip [0 :: Int ..] dimsAt
                          , i `notElem` posBlock ]
     ojOf vi oth = levelsToIdx (dv : otherDims) (vi : oth)
     blockMats  = [ ((vi, oth, lk), reindexABOrd dimsAt posBlock (mAmp m))
@@ -627,9 +627,9 @@ data DropReport = DropReport
 
 verdict :: (Eq a, Fractional a, Conj a) => VisSpec -> Prog a -> [DropReport]
 verdict vis prog = requireFlat SurfaceFragment (visScope vis) prog `seq`
-  [ DropReport x [ (sel, semanticVerdictS vis prog x sel)
-                 | sel <- allSelections (liftDepthBeforeS prog x) ]
-  | x <- dropSites prog ]
+  [ DropReport x [ (sel, semanticVerdictS vis pre x sel)
+                 | sel <- allSelections (liftDepthBeforeS pre x) ]
+  | (x, pre) <- sitePrefixes prog ]
 
 -- Every site under every selection of the lifts before it.
 -- >>> verdict visXY andUncomputedByMeasurement

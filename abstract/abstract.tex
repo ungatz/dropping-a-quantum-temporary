@@ -50,9 +50,8 @@
 \definecolor{loanink}{HTML}{8C4A2F}
 \definecolor{returnink}{HTML}{007A59}
 \ifdefined\directlua
-  \IfFontExistsTF{Iosevka Custom Semibold}
-    {\newfontface\abstractkwface{Iosevka Custom Semibold}[Scale=MatchLowercase]}
-    {\newcommand{\abstractkwface}{\ttfamily\bfseries}}
+  \setmonofont{JetBrains Mono}[Scale=MatchLowercase,RawFeature={-liga,-calt,-clig,-dlig}]
+  \newfontface\abstractkwface{JetBrains Mono SemiBold}[Scale=MatchLowercase,RawFeature={-liga,-calt,-clig,-dlig}]
 \else
   \newcommand{\abstractkwface}{\ttfamily\bfseries}
 \fi
@@ -67,7 +66,7 @@
 
 \section{Specifying a safe drop}\label{sec:problem}
 
-Programming with quantum data in the pure setting has a mature treatment in programming
+Programming with quantum data in the pure setting has been studied in programming
 languages, from categorical semantics to typed and circuit
 languages~\cite{AbramskyCoecke2004,Selinger2004Towards,SelingerValiron2006,Paykin2017QWIRE}.
 Recent work adds measurement to that setting as a computational
@@ -75,8 +74,9 @@ effect~\cite{Staton2015Effects,Heunen2022QIE,Carette2024QuantumEffect}. Discardi
 measurement needs, and allocating one is the other. Unlike in the classical setting, discarding is
 not free. Copying classical data and discarding the copy does nothing, but on quantum data it
 is a measurement~\cite[\S3.4.1]{Heunen2022QIE}, and discarding a register can leave the rest
-mixed~\cite[\S2.1.2]{Heunen2022QIE}. This work is about the allocation and deallocation of registers
-holding quantum data. Consider two programs on a qubit \code{v}:
+mixed~\cite[\S2.1.2]{Heunen2022QIE}. We give an exact safety test based on what a context can observe.
+At a safe drop, we construct a gate on the temporary alone that restores its allocation state.
+Consider two programs on a qubit \code{v}:
 \par\medskip\centerline{\small\ttfamily
 \begin{tabular}{@{}l@{\qquad\qquad}l@{}}
 \kw{prog} a (v : [2]) : [2] \{ & \kw{prog} b (v : [2]) : [2] \{\\
@@ -85,7 +85,7 @@ holding quantum data. Consider two programs on a qubit \code{v}:
 \quad \kw{drop} t; \kw{return} v \} & \quad \kw{drop} t; \kw{return} v \}
 \end{tabular}}\par\medskip\noindent
 Here \code{\kw{new} t : [2] @ |0>} allocates a qubit \code{t}, of dimension $2$, in $|0\rangle$, and
-\code{\kw{drop} t} ends its scope, hiding \code{t} without a gate.
+\code{\kw{drop} t} ends its scope without changing the joint state.
 In program (a), the Hadamard gate $H$ puts \code{t} in the plus state $|{+}\rangle$, an equal
 superposition of $|0\rangle$ and $|1\rangle$, whatever \code{v} held, and another $H$ would restore
 $|0\rangle$ without touching \code{v}. Program (b) adds \code{CX t v}, which flips \code{v} when \code{t} is $1$.
@@ -93,23 +93,22 @@ On input $|0\rangle$ it leaves \code{t} and \code{v} in a Bell state, an equal s
 and $|11\rangle$ that no two separate operations can prepare, so dropping \code{t} leaves \code{v} mixed. In both programs, \code{t}'s lifetime ends at the drop, so scope checks accept both. Since gates are unitary and can therefore be undone, compilers usually reclaim a temporary by
 uncomputing it, running the computation that acted on it backwards~\cite[pp.~525--526]{Bennett1973Logical}\cite{Bennett1989TimeSpace,Bichsel2020Silq,Paradis2021Unqomp},
 which can take as many gates as the computation itself~\cite[\S1]{Liu2026Uncomputation}.
-Silq and Unqomp automate this by letting only \code{qfree} gates, which create no
-superposition, produce the temporary~\cite[\S4.4]{Bichsel2020Silq}\cite[\S2.2]{Paradis2021Unqomp}, so both refuse program (a), whose one $H$ is not \code{qfree}~\cite[\S6.2]{Paradis2021Unqomp}. We ask when one unitary on the dropped registers alone restores
-their allocation state, making the drop free.
+Silq and Unqomp automate this by letting only \code{qfree} gates, which map basis states to basis
+states, produce the temporary~\cite[\S4.4]{Bichsel2020Silq}\cite[\S2.2]{Paradis2021Unqomp}, so both refuse program (a), whose one $H$ is not \code{qfree}~\cite[\S6.2]{Paradis2021Unqomp}.
 
-Now let $p$ allocate \code{t} in a pure state $\psi$, run measurement-free code $M$ on \code{t}
-and the input \code{v}, and drop \code{t}. Its independent witness $\mathcal S(R,U)$ prepares \code{t}
-by one gate $R$ on \code{t} alone, while a gate $U$ acts on \code{v} and fresh registers for $M$'s
-other temporaries, left implicit below:
+Now let $p$ allocate \code{t} in a pure state $\psi$, run measurement-free $M$ on \code{t}
+and the input \code{v}, and drop \code{t}. An independent witness $\mathcal S(R,U)$ prepares \code{t} without \code{v}
+by a gate $R$ on \code{t} alone, while $U$ acts on \code{v} and fresh registers for $M$'s
+other temporaries, omitted below:
 \[
 \begin{aligned}
 p(v)&=\code{\kw{new} t : [d] @ ψ; M; \kw{drop} t; \kw{return} v},\\
 \mathcal S(R,U)(v)&=\code{\kw{new} t : [d] @ ψ; R t; U v; \kw{drop} t; \kw{return} v}.
 \end{aligned}
 \]
-We call the drop \emph{safe} if $p\equiv\mathcal S(R,U)$ for some $R$ and $U$:
-no closed context can tell the two programs apart just before the drop, with every
-register still visible. One pair serves every input: $\exists R,U\;\forall x$, as in
+We call the drop \emph{safe} if $p\equiv\mathcal S(R,U)$ for some $R$ and $U$,
+where $\equiv$ is \emph{observational equivalence}: no context can tell them apart just before the drop, with all
+registers visible. The same $R$ and $U$ work for every input: $\exists R,U\;\forall x$, as in
 RapunSL's $\exists P\;\forall|\psi\rangle$ for its leftover assertion~\cite[App.~B.3]{Matsushita2026RapunSL}. Registers are
 finite-dimensional over $\C$, and every unitary is a gate.
 
@@ -195,10 +194,10 @@ so that $\|K_ox\|^2$ is the probability of the path at a normalized input $x$.
 \par\medskip\centerline{\small\ttfamily
 \begin{tabular}{@{}l@{\qquad}l@{}}
 \kw{prog} c (v : [2]) : [2] \{ & \kw{prog} witness (v : [2]) : [2] \{\\
-\quad \kw{new} t : [2] @ |0>; H v; CX v t; &
-\quad \kw{new} t : [2] @ |0>; \kw{new} a : [2] @ |0>; H v; CX v a;\\
-\quad k = \kw{lift}[\{0\}] t; V t v; \kw{drop} t; \kw{return} v \} &
-\quad k = \kw{lift}[\{0\}] a; \kw{drop} a; \kw{drop} t; \kw{return} v \}
+\quad \kw{new} t : [2] @ |0>; & \quad \kw{new} t : [2] @ |0>;\\
+\quad H v; CX v t; & \quad \kw{new} a : [2] @ |0>; H v; CX v a;\\
+\quad k = \kw{lift}[\{0\}] t; V t v; & \quad k = \kw{lift}[\{0\}] a;\\
+\quad \kw{drop} t; \kw{return} v \} & \quad \kw{drop} a; \kw{drop} t; \kw{return} v \}
 \end{tabular}}\par\medskip
 
 \begin{figure}[tbp]
@@ -209,7 +208,7 @@ so that $\|K_ox\|^2$ is the probability of the path at a normalized input $x$.
 The picture follows program (c), with \code{t} first, at input $x=\alpha|0\rangle+\beta|1\rangle$.
 After $H$ and the copy into \code{t}, the measurement keeps one term. Then $V$ fixes $|00\rangle$
 on \textcolor{accent}{record $1$} and turns $|11\rangle$ into a Bell state on \textcolor{accentwarm}{record $0$}.
-Each pictured weight is the squared magnitude of that term's coefficient.
+Each weight is the squared magnitude of the term's coefficient.
 
 On \textcolor{accent}{record $1$}, the slices are $\textcolor{accent}{W_1}=|0\rangle\langle{+}|$ and $0$, so \code{t} is fixed at $|0\rangle$. $W_1$ gives $|0\rangle$ with weight $1$ at $x=|{+}\rangle$,
 and $|0\rangle/\sqrt2$ with weight $1/2$ at $x=|0\rangle$. Normalizing gives $|0\rangle$ in both
@@ -244,7 +243,7 @@ Zero maps satisfy the three conditions, and return gates may differ between reco
 \end{theorem}
 \end{samepage}
 
-Contexts cannot read records, so they see the \emph{summed channel}~\cite[\S2.3.2]{Watrous2018TQI}, the mixture on
+After the drop, contexts see the \emph{summed channel}~\cite[\S2.3.2]{Watrous2018TQI}, the mixture on
 returned registers and a reference weighted by record probabilities. That mixture does not determine safety.
 At input $x=\alpha|0\rangle+\beta|1\rangle$, the programs below leave these unnormalized states on
 records \textcolor{accent}{$1$} and \textcolor{accentwarm}{$0$} before \code{\kw{drop} t}:
@@ -258,7 +257,7 @@ records \textcolor{accent}{$1$} and \textcolor{accentwarm}{$0$} before \code{\kw
 \end{array}
 \]
 Summed over records, both programs act on \code{v} as a standard-basis measurement, and every record has probability $1/2$
-at every input, so only the per-record states tell them apart.
+at every input, despite their different safety verdicts.
 
 \section{Blocks and loans}\label{sec:loans}
 

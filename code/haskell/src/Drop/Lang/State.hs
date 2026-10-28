@@ -22,6 +22,33 @@ type Matrix a = [[a]]
 
 -- Index arithmetic
 
+-- | The state dimension, checked before converting back to machine indices.
+-- The empty register tuple has dimension one. A wrapped product is never a zero state.
+dimensionProduct :: [Int] -> Maybe Int
+dimensionProduct dims
+  | any (<= 0) dims || total > toInteger (maxBound :: Int) = Nothing
+  | otherwise = Just (fromInteger total)
+  where total = product (map toInteger dims)
+
+-- >>> dimensionProduct []
+-- Just 1
+-- >>> dimensionProduct [2, 3]
+-- Just 6
+-- >>> dimensionProduct [0, 2]
+-- Nothing
+-- >>> dimensionProduct [maxBound, 2]
+-- Nothing
+
+-- | Refuse a dimension that the list indices cannot represent.
+dimensionSize :: [Int] -> Int
+dimensionSize dims = case dimensionProduct dims of
+  Just n -> n
+  -- refusal: state dimensions must be positive and fit the implementation's indices
+  Nothing -> error "implementation limit: state dimension is nonpositive or exceeds the index range"
+
+-- >>> dimensionSize [2, 3]
+-- 6
+
 -- | The level of each register at flat position @k@, first register most significant.
 idxToLevels :: [Int] -> Int -> [Int]
 idxToLevels dims k = go (reverse dims) k []
@@ -78,7 +105,7 @@ restIdx n idx = [ i | i <- [0 .. n - 1], i `notElem` idx ]
 -- | The basis state with the given level in each register.
 ket :: Num a => [Int] -> [Int] -> StateV a
 ket dims ls =
-  [ if k == levelsToIdx dims ls then 1 else 0 | k <- [0 .. product dims - 1] ]
+  [ if k == levelsToIdx dims ls then 1 else 0 | k <- [0 .. dimensionSize dims - 1] ]
 
 -- >>> ket [2] [1]
 -- [0,1]
@@ -200,9 +227,9 @@ applyGate dims g targets st
   where
     nubInts []       = []
     nubInts (x : xs) = x : nubInts (filter (/= x) xs)
-    n     = product dims
+    n     = dimensionSize dims
     tdims = registerDims dims targets
-    tsize = product tdims
+    tsize = dimensionSize tdims
     src ls tj =
       levelsToIdx dims
         (foldl (\l (p, v) -> listSet p v l) ls (zip targets (idxToLevels tdims tj)))
@@ -295,8 +322,8 @@ factorSplitOrd dims aIdx st =
                   , [ m a0 b / p | b <- [0 .. nB - 1] ] )
         else Nothing
   where
-    nA    = product (registerDims dims aIdx)
-    nB    = product (registerDims dims (restIdx (length dims) aIdx))
+    nA    = dimensionSize (registerDims dims aIdx)
+    nB    = dimensionSize (registerDims dims (restIdx (length dims) aIdx))
     m     = entryAB dims aIdx st
     pivot = case [ (a, b) | a <- [0 .. nA - 1], b <- [0 .. nB - 1], m a b /= 0 ] of
               []      -> Nothing
@@ -335,8 +362,8 @@ reindexABOrd :: [Int] -> [Int] -> StateV a -> Matrix a
 reindexABOrd dims aIdx st =
   [ [ entryAB dims aIdx st a b | b <- [0 .. nB - 1] ] | a <- [0 .. nA - 1] ]
   where
-    nA = product (registerDims dims aIdx)
-    nB = product (registerDims dims (restIdx (length dims) aIdx))
+    nA = dimensionSize (registerDims dims aIdx)
+    nB = dimensionSize (registerDims dims (restIdx (length dims) aIdx))
 
 -- >>> reindexABOrd [2,2] [0] [1,2,3,4]
 -- [[1,2],[3,4]]

@@ -1471,6 +1471,8 @@ permCircuit qs imgs = concatMap (transpositionLines qs) (concatMap cycleToTransp
 -- X-conjugated when the pattern's bit there is 0, all other qubits become
 -- ctrl/negctrl controls at their pattern bit.
 diagCircuit :: [Int] -> Matrix Cyclo -> [String]
+-- A gate on the unit value has no target qubit; its scalar is a global phase.
+diagCircuit [] [[z]] = [ "gphase(" ++ angleLabel (phase (toC z)) ++ ");" | z /= 1 ]
 -- impossible: i is below d = length mat = length entries
 diagCircuit qs mat = concat [ phaseGateFor i (entries !! i) | i <- [0 .. d - 1], entries !! i /= 1 ]
   where
@@ -2041,7 +2043,7 @@ buildHeader layout visNames width body =
   ]
   ++ [ "gate diff a, b { h a; h b; x a; x b; cz a, b; x a; x b; h a; h b; }   // Grover diffusion, up to global phase"
      | usesDiff ]
-  ++ [ "qubit[" ++ show (liTotalQubits layout) ++ "] q;" ]
+  ++ [ "qubit[" ++ show (liTotalQubits layout) ++ "] q;" | liTotalQubits layout > 0 ]
   ++ [ "bit[" ++ show (liTotalBits layout) ++ "] c;" | liTotalBits layout > 0 ]
   ++ [ "bit[" ++ show width ++ "] result;" | width > 0 ]
   ++ [""]

@@ -32,7 +32,7 @@ import Data.List (intercalate)
 import System.Exit (exitFailure)
 import System.IO (hPutStrLn, stderr)
 
-import Drop.Lang.Check (TypeError (..), checkProgram, showTypeError)
+import Drop.Lang.Check (TypeError (..), checkProgram, checkCapacity, showTypeError)
 import Drop.Lang.Compile (compile, compileReuse, allocationReport, CompileError, showCompileError)
 import Drop.Lang.Elab (flatToProgramR)
 import Drop.Lang.Scalar (Amp (..), Cyclo)
@@ -87,7 +87,7 @@ data Report = Report
 runText :: String -> Either String Report
 runText src = do
   (vis, prog) <- surfaceProgram src
-  Right (Report vis prog (map (siteReport vis prog) (dropSites prog)))
+  Right (Report vis prog [ siteReport vis pre site | (site, pre) <- sitePrefixes prog ])
 
 -- The temporary AND (each line shown with its quotes, so its indentation stays): one site, one lift, two rows.
 -- >>> src <- readFile "programs/temp-and.s"
@@ -114,6 +114,9 @@ runText src = do
 surfaceProgram :: String -> Either String (VisSpec, Prog Cyclo)
 surfaceProgram src = do
   (f, pos) <- parseFileAt src
+  case checkCapacity (flatToProgramR (sfVis f) (sfReturn f) (sfBody f)) of
+    Left e -> Left (showTypeError e)
+    Right () -> Right ()
   case wellFormed (sfBody f) of
     Just err -> Left err
     Nothing  -> case checkProgram (flatToProgramR (sfVis f) (sfReturn f) (sfBody f)) of

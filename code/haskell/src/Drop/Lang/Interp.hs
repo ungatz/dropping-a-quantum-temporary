@@ -153,7 +153,7 @@ checkCmd sc c = case c of
   Gate g xs -> do
     ds <- mapM (live "gate") xs
     distinct "gate" xs
-    let n = product ds
+    let n = dimensionSize ds
     if length g == n && all ((== n) . length) g then Right sc
       else Left ("gate on " ++ unwords xs ++ ": a matrix of " ++ show (length g)
                  ++ " rows does not act on registers of total dimension " ++ show n)
@@ -394,7 +394,8 @@ runStmts m0 prog sel stop = go (m0 { mSel = sel }) prog
     -- The whole program is checked once, before the run, from the scope the
     -- machine starts in: halting at a site must not hide a use after it.
     checked = requireFlat (maybe ElaboratedFragment (const SurfaceFragment) stop)
-                          (machScope m0) prog
+                          (machScope m0) prog `seq`
+              maybe () (requireUniqueSite prog) stop
     go m _ | checked `seq` False = m
     go m [] = case stop of
       Nothing -> m
@@ -468,6 +469,29 @@ dropSites prog
 -- >>> dropSites ([] :: Prog Rational)
 -- []
 
+-- | One exposed prefix per drop occurrence. Earlier drops act as identity,
+-- so omitting them also keeps distinct unit drops from sharing the empty name key.
+sitePrefixes :: Prog a -> [(Site, Prog a)]
+sitePrefixes prog = dropSites prog `seq` go [] prog
+  where
+    go _ [] = []
+    go before (Drop xs : rest) = (xs, before ++ [Drop xs]) : go before rest
+    go before (cmd : rest) = go (before ++ [cmd]) rest
+
+-- >>> map (\(site, pre) -> (site, length pre)) (sitePrefixes ([New "t" 2, Drop [], Lift "p" "t" [0], Drop []] :: Prog Rational))
+-- [([],2),([],3)]
+
+-- | Name-based callers must identify one occurrence; reports use sitePrefixes.
+requireUniqueSite :: Prog a -> Site -> ()
+requireUniqueSite prog site
+  | null site && length [ () | Drop xs <- prog, xs == site ] > 1 =
+      -- refusal: names alone do not identify repeated unit-drop occurrences
+      error ("ambiguous drop site " ++ show site ++ "; use its exposed prefix")
+  | otherwise = ()
+
+-- >>> requireUniqueSite ([Drop ["t"]] :: Prog Rational) ["t"]
+-- ()
+
 -- | The program up to and including the drop site named @x@.
 --
 -- A site's verdict depends only on this prefix. Cutting there also keeps
@@ -475,7 +499,7 @@ dropSites prog
 -- l-bit word, and a whole-program walk could reach a later, deeper site
 -- and consume a bit the word never had.
 prefixThroughS :: Prog a -> Site -> Prog a
-prefixThroughS prog x = before ++ take 1 after
+prefixThroughS prog x = requireUniqueSite prog x `seq` (before ++ take 1 after)
   where (before, after) = break ((== Just x) . siteNames) prog
 
 -- >>> length (prefixThroughS ([Drop ["a"], Gate [[0, 1], [1, 0]] ["x"], Drop ["b", "c"]] :: Prog Rational) ["a"])
@@ -499,7 +523,8 @@ prefixThrough prog x = prefixThroughS prog [x]
 -- up to the @drop@ that /is/ the site. Since the parser forbids an
 -- allocation inside an @if@ branch, this top-level scan sees every binder.
 beforeSite :: Prog a -> Site -> Prog a
-beforeSite prog site = takeWhile ((/= Just site) . siteNames) prog
+beforeSite prog site = requireUniqueSite prog site `seq`
+                       takeWhile ((/= Just site) . siteNames) prog
 
 -- >>> length (beforeSite andUncomputedByMeasurement ["a"])
 -- 5
@@ -520,8 +545,7 @@ allSelections n = [ c : r | c <- [SIn, SOut], r <- allSelections (n - 1) ]
 
 -- | Number of top-level lifts strictly before the drop at a site.
 liftDepthBeforeS :: Prog a -> Site -> Int
-liftDepthBeforeS prog x = length [ () | Lift {} <- before ]
-  where before = takeWhile ((/= Just x) . siteNames) prog
+liftDepthBeforeS prog x = length [ () | Lift {} <- beforeSite prog x ]
 
 -- >>> liftDepthBeforeS andUncomputedByMeasurement ["a"]
 -- 1

@@ -652,6 +652,40 @@ traceChecks corpus c = do
 
 -- Main --------------------------------------------------------------------
 
+-- Dimensions are checked before state enumeration, and unit drops keep their occurrences.
+capacityAndUnitSiteChecks :: Counters -> IO ()
+capacityAndUnitSiteChecks c = do
+  check1 c "an empty register tuple has dimension one" (dimensionProduct [] == Just 1)
+  check1 c "a dimension product cannot wrap to zero" (dimensionProduct [maxBound, 2] == Nothing)
+  let tooLarge = Program [("x", maxBound), ("y", 2)] (SReturn VUnit) :: Program Cyclo
+  check1 c "the typed entry point refuses an unrepresentable state dimension"
+    (case checkProgram tooLarge of Left (Other msg) -> "implementation limit" `isInfixOf` msg; _ -> False)
+  let duplicate = Program [("x", 2), ("x", 2)] (SReturn (VVar "x")) :: Program Cyclo
+  check1 c "the typed context cannot bind an input twice" (checkProgram duplicate == Left (UsedTwice "x"))
+  let arm = SDo (StNew "t" 2 [1, 0]) (SDo (StDrop 0 (VVar "t")) (SReturn (VVar "x")))
+      alternatives = Program [("x", maxBound `div` 2)] (SIf (BLit True) arm arm) :: Program Cyclo
+  check1 c "alternative branches use the larger dimension, not their product"
+    (checkCapacity alternatives == Right ())
+  let source = "prog big (x : [" ++ show (maxBound :: Int) ++ "], y : [2]) : 1 { drop (x,y); return () }"
+  check1 c "run refuses a dimension overflow instead of reporting Unreachable"
+    (case runText source of Left msg -> "implementation limit" `isInfixOf` msg; _ -> False)
+  let units = "prog units () : 1 { drop (); new t : [2] @ |0>; p = lift[{1}] t; drop (); drop t; return () }"
+  check1 c "each unit-drop occurrence has its own record table"
+    (case runText units of
+       Right rep -> map RR.srDepth (RR.rpSites rep) == [0, 1, 1]
+                    && map (map RR.trVerdict . RR.srRows) (RR.rpSites rep)
+                       == [[C.Safe], [C.Unreachable, C.Safe], [C.Unreachable, C.Safe]]
+       Left _ -> False)
+  check1 c "the criterion report also distinguishes repeated unit drops"
+    (case runText units of
+       Right rep -> map (map snd . C.drRows) (C.verdict (RR.rpVis rep) (RR.rpProg rep))
+                       == [[C.Safe], [C.Unreachable, C.Safe], [C.Unreachable, C.Safe]]
+       Left _ -> False)
+  check1 c "an ordinary small whole-input drop remains Unsafe"
+    (case runText "prog small (x : [2], y : [2]) : 1 { drop (x,y); return () }" of
+       Right rep -> map (map RR.trVerdict . RR.srRows) (RR.rpSites rep) == [[C.Unsafe]]
+       Left _ -> False)
+
 main :: IO ()
 main = do
   corpus <- TP.readCorpus
@@ -668,6 +702,7 @@ main = do
   terminationBoundChecks corpus c
   hiddenRegisterChecks corpus c
   corpusBlockChecks corpus c
+  capacityAndUnitSiteChecks c
   report c
 
 -- (g) the site and the criterion, adversarially -------------------------

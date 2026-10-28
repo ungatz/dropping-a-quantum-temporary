@@ -43,7 +43,7 @@ import Data.Word (Word64)
 import System.Directory (createDirectoryIfMissing)
 import Text.Printf (printf)
 
-import Drop.Lang.Scalar (Cyclo(..))
+import Drop.Lang.Scalar (Cyclo(..), iC)
 import Drop.Lang.Check (checkProgram, TypeError (BadLiftBlock))
 import Drop.Lang.Compile
 import Drop.Lang.Compile.Emit
@@ -1423,6 +1423,30 @@ liftBlockChecks c = do
   where
     block s = Program [("w",4)] (SDo (StLift "p" s "w") (SReturn (VVar "w"))) :: Program Cyclo
 
+-- Empty circuits need no qubit declaration. A scalar gate on () keeps its
+-- phase without selecting a target, in either allocation mode.
+emptyAndScalarChecks :: Counters -> IO ()
+emptyAndScalarChecks c = do
+  let empty = Program [] (SReturn VUnit) :: Program Cyclo
+      scalar z = Program [("x", 2)]
+        (SDo (StGate [[z]] VUnit) (SReturn (VVar "x"))) :: Program Cyclo
+      noQubits txt = not ("qubit[" `isInfixOf` txt)
+      phaseKept txt = "gphase(pi/2);" `isInfixOf` txt
+      noPhase txt = not ("gphase(" `isInfixOf` txt)
+  expectEmittedFile c "empty-program" "prog empty () : 1 { return () }"
+    [("empty program emits no quantum declaration", noQubits)]
+  expectEmittedTyped c "scalar-global-phase" (scalar iC)
+    [("scalar i on () emits a global phase", phaseKept)]
+  expectEmittedTyped c "scalar-identity" (scalar 1)
+    [("scalar identity on () emits no gate", noPhase)]
+  forM_ [("empty program", empty, noQubits),
+         ("scalar i", scalar iC, phaseKept),
+         ("scalar identity", scalar 1, noPhase)] $ \(name, prog, expected) ->
+    check1 c ("reuse: " ++ name ++ " has valid complete output")
+      (case compileReuse prog of
+         Right txt -> length txt > 0 && expected txt
+         Left _ -> False)
+
 main :: IO ()
 main = do
   corpus <- TP.readFiles (corpusFiles ++ fixtureFiles)
@@ -1440,6 +1464,7 @@ main = do
   fifoPoolChecks c
   nestedResourceChecks c
   liftBlockChecks c
+  emptyAndScalarChecks c
   bellPairChecks corpus c
   generalReflectionChecks c
   twoSupportReflectionChecks c

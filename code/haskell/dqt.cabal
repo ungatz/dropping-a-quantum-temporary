@@ -1,6 +1,8 @@
 cabal-version:      2.4
 name:               dqt
 version:            0.1.0
+license:            MIT
+license-file:       LICENSE
 synopsis:           A typed language for quantum temporaries, its checker, and the drop criterion
 description:
   A self-contained implementation of the language of /Safe to Drop: an Exact
@@ -15,8 +17,9 @@ description:
   They share the scalar field, so what the comparison holds fixed is the
   arithmetic and what it varies is the algorithm.
   .
-  Exact arithmetic throughout, and a check that asserts no inexact numeric
-  type occurs anywhere in the sources.  Reading order is in README.md.
+  The drop checkers use exact arithmetic. The OpenQASM emitter computes
+  gate angles numerically, and the source check exempts that emitter and its
+  tests. The commands and source layout are in README.md.
 category:           Language
 build-type:         Simple
 extra-doc-files:    README.md
@@ -28,6 +31,7 @@ extra-doc-files:    README.md
 extra-source-files: programs/*.s
                     examples/paper/*.s
                     test/fixtures/*.s
+                    check-examples.py
 
 common lang
     default-language: GHC2021

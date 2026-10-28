@@ -51,12 +51,14 @@ def result_measurements(program):
 
 def validate_allocation(data, program, mode):
     """Validate the supported finite basis-allocation slice and return maps."""
-    if not isinstance(data, dict) or not data.get("wires"):
+    if not isinstance(data, dict) or not isinstance(data.get("wires"), list):
         raise ValueError("allocation report has no wires")
     qfield = "fresh" if mode == "fresh" else "reuse"
     width = int(data["freshQubits"] if mode == "fresh" else data["reuseQubits"])
-    if width <= 0 or program.nq != width:
+    if width < 0 or program.nq != width:
         raise ValueError(f"{mode} allocation width {width} does not match QASM width {program.nq}")
+    if not data["wires"] and width != 0:
+        raise ValueError("allocation report has no wires")
     permanent = set()
     temporary_qubits = set()
     wire_by_name = {}
@@ -139,7 +141,7 @@ def all_records(data):
 def statement_counts(statements):
     gates = measurements = 0
     for statement in statements:
-        if isinstance(statement, qast.QuantumGate):
+        if isinstance(statement, (qast.QuantumGate, qast.QuantumPhase)):
             gates += 1
         elif isinstance(statement, qast.QuantumMeasurementStatement):
             measurements += 1
