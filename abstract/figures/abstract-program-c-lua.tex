@@ -8,9 +8,9 @@
 \begin{document}
 \begin{tikzpicture}[house,line cap=round,
  gate/.style={box,rounded corners=1pt,fill=white,minimum width=.46cm,minimum height=.47cm,inner sep=1pt}]
-  \fill[prefixpaper,rounded corners=2pt] (.95,-.18) rectangle (4.89,1.34);
-  \node[font=\small,text=muted] at (3.10,1.62) {record $1$: $K^{(c)}_1=|00\rangle\langle{+}|$};
-  \node[font=\small] at (1.51,1.11) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
+  \fill[prefixpaper,rounded corners=2pt] (.95,-.18) rectangle (4.89,1.74);
+  \node[font=\small,text=muted] at (3.10,2.02) {record $1$: $K^{(c)}_1=|00\rangle\langle{+}|$};
+  \node[font=\small] at (1.51,1.26) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
   \node[anchor=east,inner sep=1pt] at (.53,.13) {$\texttt{v}:x$};
   \fill[stateink] (1.08,.66)--(1.08,.90)--(1.30,.78)--cycle;
   \draw[accentplum,circuitwire] (1.30,.78)--(5.11,.78);
@@ -22,10 +22,10 @@
   \draw[ink,fill=white] (2.56,.78) circle (.14);
   \draw[ink] (2.42,.78)--(2.70,.78) (2.56,.64)--(2.56,.92);
   \node[gate] at (3.43,.78) {\figurekw{lift}};
-  \draw[muted,double,double distance=.7pt] (3.43,1.02)--(3.43,1.22);
-  \node[font=\small,text=muted,anchor=west] at (3.50,1.18) {$\texttt{k}=1$};
+  \draw[muted,double,double distance=.7pt] (3.43,1.02)--(3.43,1.44);
+  \node[font=\small,text=muted,anchor=west] at (3.50,1.40) {$\texttt{k}=1$};
   \node[gate,minimum height=1.04cm] at (4.36,.46) {$V$};
-  \draw[muted,densely dashed] (5.11,-.08)--(5.11,1.48);
+  \draw[muted,densely dashed] (5.11,-.08)--(5.11,1.59);
   \node[font=\small,text=muted,anchor=north] at (5.11,-.18) {\figurekw{drop}~\texttt{t}};
   \node[font=\small,text=certink] at (5.65,1.20) {$g=|0\rangle$};
   \node[font=\small,text=returnink] at (5.65,.39) {$R=I$};
