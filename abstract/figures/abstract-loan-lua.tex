@@ -1,22 +1,29 @@
 \documentclass[tikz,border=2pt]{standalone}
 \input{house-lua}
+\definecolor{prefixpaper}{HTML}{DDECEE}
+\definecolor{prefixline}{HTML}{BDD5DA}
+\definecolor{stateink}{HTML}{006A7B}
 \definecolor{loanink}{HTML}{8C4A2F}
 \definecolor{returnink}{HTML}{007A59}
 \definecolor{returnsoft}{HTML}{DAF1E9}
 \begin{document}
-\begin{tikzpicture}[house,semithick,font=\normalsize,
- gate/.style={draw=ink,fill=white,minimum width=5.2mm,minimum height=5.2mm,inner sep=1.5pt},
- repair/.style={gate,draw=returnink,fill=returnsoft}]
-\node[font=\small,text=muted] at (1.15,.7) {source};
-\node[font=\small,text=returnink] at (4.2,.7) {inserted before drop};
-\foreach \y/\initial/\middle/\last/\op/\wirecolour in {.25/{\text{\texttt{l}}:\ell}/{X\ell}/{\ell}/X/loanink,-.50/{\text{\texttt{t}}:|0\rangle}/{|+\rangle}/{|0\rangle}/H/ink}{
- \node[anchor=east,text=\wirecolour,inner sep=2pt] at (0,\y) {$\initial$};
- \draw[\wirecolour] (0.05,\y)--(5.35,\y);
- \node[gate] at (1.15,\y) {$\op$};
- \node[fill=white,text=\wirecolour,inner sep=2pt] at (2.7,\y) {$\middle$};
- \node[repair] at (4.2,\y) {$\op$};
- \node[anchor=west,text=returnink,inner sep=2pt] at (5.4,\y) {$\last$};
-}
-\node[text=returnink,font=\small] at (3.1,-.94) {$T=X\otimes H$};
+\begin{tikzpicture}[house,line cap=round,
+ gate/.style={box,rounded corners=1pt,fill=white,minimum width=.50cm,minimum height=.49cm,inner sep=1pt}]
+  \fill[prefixpaper,rounded corners=2pt] (.95,-.12) rectangle (3.78,1.32);
+  \node[font=\small] at (1.70,1.55) {$K\ell=X\ell\otimes|{+}\rangle$};
+  \node[font=\small,text=returnink] at (4.55,1.55) {$R=X\otimes H$ at drop};
+  \node[anchor=east,inner sep=1pt,text=loanink] at (.53,.78) {$\texttt{l}:\ell$};
+  \node[font=\small] at (1.44,.53) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
+  \fill[stateink] (1.12,.07)--(1.12,.31)--(1.34,.19)--cycle;
+  \draw[loanink,circuitwire,->] (.60,.78)--(6.07,.78);
+  \draw[accentplum,circuitwire] (1.34,.19)--(4.30,.19);
+  \draw[returnink,circuitwire,->] (4.30,.19)--(6.07,.19);
+  \node[gate] at (2.30,.19) {$H$};
+  \node[gate] at (3.00,.78) {$X$};
+  \node[font=\footnotesize,text=muted,anchor=north] at (4.95,-.09) {\figurekw{drop}~\texttt{(l,t)}};
+  \node[gate,draw=returnink,fill=returnsoft] at (4.30,.78) {$X$};
+  \node[gate,draw=returnink,fill=returnsoft] at (4.30,.19) {$H$};
+  \node[anchor=west,inner sep=2pt,text=loanink] at (6.17,.78) {$\ell$};
+  \node[anchor=west,inner sep=2pt,text=returnink] at (6.17,.19) {$|0\rangle$};
 \end{tikzpicture}
 \end{document}

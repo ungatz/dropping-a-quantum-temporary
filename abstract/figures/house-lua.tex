@@ -34,6 +34,13 @@
   boxdim/.style={box, draw=hairline, text=muted},
   flow/.style={->, draw=ink},
   flowdim/.style={->, draw=hairline},
+  circuitwire/.style={line width=.65pt,line cap=round},
+  scopeground/.pic={
+    \draw[muted,line width=.6pt,line cap=round] (0,0)--(0,-.14);
+    \draw[muted,line width=.6pt,line cap=round] (-.17,-.14)--(.17,-.14);
+    \draw[muted,line width=.6pt,line cap=round] (-.11,-.22)--(.11,-.22);
+    \draw[muted,line width=.6pt,line cap=round] (-.045,-.30)--(.045,-.30);
+  },
   lbl/.style={font=\footnotesize\itshape, text=accent, inner sep=2pt},
   lbldim/.style={font=\footnotesize, text=muted, inner sep=2pt},
   group/.style={draw=hairline, dashed, rounded corners=2pt, inner sep=7pt},

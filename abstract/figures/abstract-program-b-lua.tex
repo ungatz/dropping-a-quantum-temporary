@@ -1,0 +1,28 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house-lua}
+\definecolor{prefixpaper}{HTML}{DDECEE}
+\definecolor{prefixline}{HTML}{BDD5DA}
+\definecolor{stateink}{HTML}{006A7B}
+\begin{document}
+\begin{tikzpicture}[house,line cap=round,
+ gate/.style={box,rounded corners=1pt,fill=white,minimum width=.46cm,minimum height=.47cm,inner sep=1pt}]
+  \fill[prefixpaper,rounded corners=2pt] (.95,-.18) rectangle (3.92,1.02);
+  \node[font=\small] at (3.00,1.78)
+    {$K^{(b)}x=(|0\rangle\otimes x+|1\rangle\otimes Xx)/\sqrt2$};
+  \node[font=\small,text=accentwarm] at (5.05,1.25) {unsafe};
+  \node[font=\small] at (1.51,.35) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
+  \node[anchor=east,inner sep=1pt] at (.53,.13) {$\texttt{v}:x$};
+  \fill[stateink] (1.08,.61)--(1.08,.85)--(1.30,.73)--cycle;
+  \draw[accentplum,circuitwire] (1.30,.73)--(4.58,.73);
+  \draw[ink,circuitwire,->] (.60,.13)--(6.10,.13);
+  \node[gate] at (2.12,.73) {$H$};
+  \fill[ink] (3.25,.73) circle (2pt);
+  \draw[ink,circuitwire] (3.25,.73)--(3.25,.13);
+  \draw[ink,fill=white] (3.25,.13) circle (.14);
+  \draw[ink] (3.11,.13)--(3.39,.13) (3.25,-.01)--(3.25,.27);
+  \draw[muted,densely dashed] (4.14,-.08)--(4.14,1.29);
+  \node[font=\small,text=muted,anchor=north] at (4.14,-.19) {\figurekw{drop}~\texttt{t}};
+  \node[font=\small,text=accentwarm,anchor=west] at (4.65,.86) {no fixed $g$};
+  \pic at (4.58,.73) {scopeground};
+\end{tikzpicture}
+\end{document}
