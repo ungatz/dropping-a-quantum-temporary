@@ -1,4 +1,4 @@
-# Safe to Drop: an Exact Criterion for Quantum Temporaries
+# Drop, Reflect and Reuse a Quantum Temporary
 
 When can a quantum compiler restore a temporary register by acting on that
 register alone, without changing the rest of the computation?
@@ -9,7 +9,6 @@ register alone, without changing the rest of the computation?
   OpenQASM 3 compiler, examples and tests.
 - [`code/qasm3/`](code/qasm3/) compares the emitted circuits with the
   interpreter's results using numerical simulation.
-- [`narrative/`](narrative/) contains the earlier full-paper draft.
 
 ## Build and run
 

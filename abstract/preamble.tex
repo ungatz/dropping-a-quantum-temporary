@@ -2,15 +2,15 @@
 \usepackage{booktabs}
 \usepackage{enumitem}
 \usepackage{cleveref}
-\newcommand{\code}[1]{\texttt{\small #1}}
+\newcommand{\code}[1]{\texttt{\small\upshape\mdseries #1}}
 \newcommand{\Hilb}{\mathcal{H}}
 \newcommand{\C}{\mathbb{C}}
 \newcommand{\den}[1]{[\![#1]\!]}
 \newcommand{\ket}[1]{\lvert #1 \rangle}
 \newcommand{\bra}[1]{\langle #1 \rvert}
 \newcommand{\tr}{\operatorname{tr}}
-\newcommand{\drop}{\texttt{drop}}
-\newcommand{\lift}{\texttt{lift}}
+\newcommand{\drop}{\texttt{\kw{drop}}}
+\newcommand{\lift}{\texttt{\kw{lift}}}
 \setlength{\emergencystretch}{2em}
 \hyphenpenalty=1000
 \sloppy
@@ -36,5 +36,8 @@
   \setmainfont{Libertinus Serif}
   \setsansfont{Libertinus Sans}
   \setmathfont{Libertinus Math}[Scale=MatchUppercase]
+  \setmathrm{Libertinus Serif}
+  \setmathsf{Libertinus Sans}
+  \setmathtt{JetBrains Mono}[Scale=MatchLowercase,RawFeature={-liga,-calt,-clig,-dlig}]
   \setmonofont{JetBrains Mono}[Scale=MatchLowercase,RawFeature={-liga,-calt,-clig,-dlig}]
 \fi

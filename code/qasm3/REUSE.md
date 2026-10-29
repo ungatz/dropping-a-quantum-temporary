@@ -56,6 +56,7 @@ with the witness on the kept record. It removes only the witness's fixed zero
 ancilla. On normalized plus and minus inputs that record has probability one
 and zero respectively. The numerical suite checks the emitted versions too.
 
-These demonstrations cover basis allocations and a fixed return tuple. General
-loan restoration, an allocator with different wire maps on different records,
-and a proved numerical error bound remain outside this implementation.
+These demonstrations cover basis allocations and a fixed return tuple. Loan returns
+are compiled before the first lift or conditional. Record-dependent loan restoration,
+an allocator with different wire maps on different records, and a proved numerical
+error bound remain outside this implementation.

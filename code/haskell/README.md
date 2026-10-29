@@ -1,11 +1,15 @@
 # dqt
 
-The language of the paper in Haskell: its type checker, its machine, the drop checker and the
-compiler to OpenQASM 3. Two checkers decide each drop by different algorithms, one on state
+The Haskell implementation of *Drop, Reflect and Reuse a Quantum Temporary* contains the
+language, its type checker, its machine and the compiler to OpenQASM 3.
+Two checkers decide each drop by different algorithms, one on state
 vectors (`src/Drop/Lang/`) and one on matrices (`src/Drop/Theory/`); `src/Drop/Bridge.hs`
 compares them. The drop checkers use exact arithmetic; the compiler computes return-gate
 parameters numerically. The library needs only `base` and `containers`.
 The typed checker and command line refuse state dimensions beyond the machine index range.
+
+`list`, `gram`, `witness` and `all` use the small matrix catalogue.
+`run programs/<name>.s` uses the paper's typed examples.
 
 ```
 cabal test                                 # the five test suites

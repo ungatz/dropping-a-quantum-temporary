@@ -117,7 +117,7 @@ To decide the equivalence, we look just before the \code{\kw{drop}}, at its \emp
 We form its \emph{exposed prefix} by keeping registers hidden by earlier drops and renaming reused registers.
 The prefix's linear map $K$ sends the input $x$ of \code{v} to the joint state, with the dropped \emph{block} first.
 Program (a) leaves \code{t} in $|{+}\rangle$ beside the untouched input, and
-program (b) then entangles the two:
+program (b) can entangle the two:
 \[K^{(a)}x=|{+}\rangle\otimes x,\qquad
 K^{(b)}x=\tfrac1{\sqrt2}\bigl(|0\rangle\otimes x+|1\rangle\otimes Xx\bigr).\]
 {\abovedisplayskip=1pt \belowdisplayskip=1pt \abovedisplayshortskip=1pt \belowdisplayshortskip=1pt
@@ -303,8 +303,8 @@ each record and pool its temporaries for a
 later \code{\kw{new}} of matching dimension and state. Reuse preserves the records, their
 weights and, on each record, the reduced state of the returned
 registers. Our Haskell checkers compute exactly. One builds
-$K_o$ at one-temporary sites, and the other runs the program on the basis inputs and their sum and asks that each block
-end in one state per record, up to phase. Both
+$K_o$ at one-temporary sites. The other tests basis inputs and their sum for a fixed temporary
+state, or checks a loan block for an isometric $B$, on each record. Both
 are exponential in the number of qubits, but even with only basis
 allocations and $X$, \code{CX} and Toffoli gates, deciding whether
 a drop of temporaries is safe on a record is coNP-complete

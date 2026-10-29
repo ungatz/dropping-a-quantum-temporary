@@ -14,7 +14,7 @@
 --             context NAME               what a client can see
 --             multi                      many temporaries: bundling, joint against per register
 --             nested                     nested allocation: does the witness survive?
---             lifted                     dynamic lifting: the verdict profile
+--             lifted                     measurement records: the verdict profile
 --             residual                   the runtime check, as an emitted table
 --             classical                  the classical core, and the two-level converse
 --             all                        the catalogue, three programs in full, and the multi,
@@ -82,7 +82,7 @@ usage corpus = unlines
   , "  dqt context <name>       what a client can see"
   , "  dqt multi                many temporaries: bundling, joint vs per-register"
   , "  dqt nested               nested allocation: does the witness survive?"
-  , "  dqt lifted               dynamic lifting: the verdict profile"
+  , "  dqt lifted               measurement records: the verdict profile"
   , "  dqt residual             the runtime check, as an emitted table"
   , "  dqt classical            the classical core, and the two-level converse"
   , "  dqt all                  all reports and examples"
@@ -278,7 +278,7 @@ cmdAll = unlines $
            ++ " drops are safe; " ++ show inShapeCount
            ++ " programs are literally separable.")
 
-  ++ sectionHead 2 "three programs in full" "where a verdict comes from"
+  ++ sectionHead 2 "three catalogue examples" "where a verdict comes from"
   ++ para "(A) and (C) are safe on different lines. (B) leaks, but a second read makes (C) safe."
   ++ concatMap detail ["example-A", "example-B", "example-C"]
 
@@ -287,7 +287,7 @@ cmdAll = unlines $
   ++ [cmdMulti]
   ++ para "The Bell pair separates joint from per-wire: dropping both is safe, neither wire is on a ray of its own."
 
-  ++ sectionHead 4 "dynamic lifting" "one text, two verdicts"
+  ++ sectionHead 4 "measurement records" "one text, two verdicts"
   ++ para "A lift keeps the surviving branch unnormalised. The record comes from the run, so the verdict is indexed by it."
   ++ [cmdLifted]
   ++ para "The first program is the witness: one text, two records, opposite verdicts."
@@ -300,7 +300,7 @@ cmdAll = unlines $
   ++ para "One fair trit, one permutation, one partial read, no superposition, and the verdict still depends on the outcome."
   ++ [cmdClassical]
   ++ [rule]
-  ++ para "Computed by this binary in exact arithmetic. No number here was transcribed by hand."
+  ++ para "Verdicts use exact arithmetic."
   where
     detail n = case byName n of
       Nothing -> []
@@ -316,22 +316,20 @@ cmdAll = unlines $
 masthead :: [String]
 masthead =
   [ thickRule
-  , "  SAFE TO DROP"
-  , "  when a quantum temporary may be discarded, and what it costs"
+  , "  Drop, Reflect and Reuse a Quantum Temporary"
+  , "  exact safety checks and local return gates"
   , thickRule ]
   ++ blank
-  ++ para "drop t does nothing at run time. The question is whether the rest of the program can tell."
+  ++ para "drop removes a name without changing the joint state. For a block of temporaries, safety means one unitary on that block alone restores its allocation state at every input. After measurement the test is per record, keeping its weight."
   ++ blank
   ++ [ "  NOTATION" ]
   ++ [ "    " ++ padSep 16 k ++ v
      | (k, v) <-
-       [ ("d, m",          "dimension of the temporary, and of the visible register")
-       , ("K",             "the core map  H_m --> H_d (x) H_m")
-       , ("K_i",           "slice i: what the program does to the visible")
-       , ("",              "register when the temporary sits at level i")
-       , ("[g]",           "a ray, written in its canonical representative")
+       [ ("d, m",          "dimension of the temporary and remaining register")
+       , ("K",             "the joint state map just before the drop")
+       , ("K_i",           "slice i: rows of K with temporary basis label i")
+       , ("[g]",           "the fixed pure state of the temporary, up to phase")
        , ("sep(R,W)",      "prepare by R, compute by W, drop: the separable shape")
-       , ("record",        "which branch survived at each measurement")
-       , ("rank <= 1",     "the slices lie on one line, so K = g (x) W, so the")
-       , ("",              "temporary carried nothing about the visible input")
+       , ("record",        "measurement outcomes, in execution order")
+       , ("rank <= 1",     "the slices are all multiples of one map")
        ] ]

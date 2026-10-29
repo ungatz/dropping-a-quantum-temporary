@@ -49,13 +49,14 @@ phase; a preparation and its adjoint cancel that phase. An unpaired U, as
 in a one-qubit return, retains its common phase. The compiler applies no
 quantum control around these complete returns; a tool that adds it needs
 to account for that phase.
+The renderer uses `gphase` for a scalar gate with no operands.
 
 Gate definitions: [OpenQASM3 U and controls](https://openqasm.com/versions/3.0/language/gates.html#built-in-gates)
 and [standard p/ry gates](https://openqasm.com/language/standard_library.html).
 
 ## What is supported
 
-The emitter handles qubit registers, the named gates recognized by
+The emitter handles registers whose dimensions are powers of two, the named gates recognized by
 `recognizeGate`, diagonal gates, basis permutations and one-qubit unitaries.
 Basis allocations assume zero scratch and emit X gates as needed. A non-basis
 allocation is refused as outside the compilation fragment. The fragment forbids allocations, lifts and drops inside
