@@ -1,0 +1,28 @@
+\documentclass[tikz,border=2pt]{standalone}
+\input{house-lua}
+\definecolor{prefixpaper}{HTML}{DDECEE}
+\definecolor{stateink}{HTML}{006A7B}
+\definecolor{loanink}{HTML}{8C4A2F}
+\definecolor{certink}{HTML}{6D3D85}
+\definecolor{returnink}{HTML}{007A59}
+\definecolor{returnsoft}{HTML}{DAF1E9}
+\begin{document}
+\begin{tikzpicture}[house,line cap=round]
+  \fill[prefixpaper,rounded corners=2pt] (.70,-.65) rectangle (8.50,.65);
+  \node (in) at (0,0) {${\color{loanink}\ell}\otimes x$};
+  \node (j) at (3.70,0) {${\color{stateink}J}{\color{loanink}\ell}\otimes x$};
+  \node (b) at (7.40,0) {${\color{certink}B}{\color{loanink}\ell}\otimes Wx$};
+  \node (out) at (11.60,0) {${\color{stateink}J}{\color{loanink}\ell}\otimes Wx$};
+  \draw[stateink,circuitwire,->] (in.east)--(j.west)
+    node[midway,above=4pt,font=\footnotesize,text=stateink] {$J\otimes I$ (allocate $\psi$)};
+  \draw[ink,circuitwire,->] (j.east)--(b.west)
+    node[midway,above=4pt] {${\color{certink}P}\otimes W$};
+  \draw[returnink,circuitwire,->] (b.east)--(out.west)
+    node[midway,above=4pt,draw=returnink,fill=returnsoft,rounded corners=1pt,inner sep=2pt]
+      {$R\otimes I$};
+  \node[font=\footnotesize] at (1.65,-.37)
+    {${\color{stateink}J}{\color{loanink}\ell}={\color{loanink}\ell}\otimes{\color{stateink}\psi}$};
+  \node[font=\footnotesize,text=certink] at (5.45,-.37) {$PJ=B$};
+  \node[font=\footnotesize,text=returnink] at (9.90,-.37) {$R=P^\dagger,\quad RB=J$};
+\end{tikzpicture}
+\end{document}
