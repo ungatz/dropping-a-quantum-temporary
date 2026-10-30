@@ -25,8 +25,8 @@
 
 \begin{abstract}
   We characterize safe drops by contextual equivalence. Without measurement, a safe drop means the temporary
-  ends in the same pure state at every input, so at most one reflection restores it. The criterion extends to records and loans
-  and checks reuse in our OpenQASM 3 compiler.
+  ends in the same pure state at every input, so at most one reflection restores it. The criterion covers records and loans, providing the reuse check
+  in our OpenQASM 3 compiler.
 \end{abstract}
 
 \maketitle
@@ -203,7 +203,7 @@ At input $x=\alpha|0\rangle+\beta|1\rangle$, measurement followed by $V$ leaves 
 \item \textcolor{accent}{Record $1$ (safe)} leaves $(\alpha+\beta)|00\rangle/\sqrt2$, with weight
 $|\alpha+\beta|^2/2$. The temporary remains in $|0\rangle$, so $\textcolor{returnink}{R}=I$.
 \item \textcolor{accentwarm}{Record $0$ (unsafe)} leaves $(\alpha-\beta)(|01\rangle+|10\rangle)/2$, with weight
-$|\alpha-\beta|^2/2$. Its nonzero outputs are Bell pairs, so this record has no pure certificate $\textcolor{certink}{g}$.
+$|\alpha-\beta|^2/2$. Its nonzero outputs normalize to a Bell pair, so this record has no pure certificate $\textcolor{certink}{g}$.
 \end{itemize}
 
 On \textcolor{accent}{record $1$}, $K^{(c)}_1=|0\rangle\otimes W_1$ with $W_1=|0\rangle\langle{+}|$.
@@ -245,9 +245,9 @@ Return gates may differ between records.
 
 Since reuse must preserve observable behavior, we might hope to decide safety from the \emph{summed channel},
 the mixture of returned-register and reference states over records~\cite[\S2.3.2]{Watrous2018TQI}.
-With \code{t} prepared in $|{+}\rangle$, measuring \code{t} in the standard basis after a controlled $Z$ on \code{(t,v)} is safe on
-both records, but measuring it before \code{v} controls a flip of \code{t} is unsafe on both.
-Both drop \code{t} and return \code{v}, inducing the same unread standard-basis measurement with weight
+With \code{t} prepared in $|{+}\rangle$, applying controlled $Z$ to \code{(t,v)} before measuring \code{t} in the standard
+basis gives a safe drop on both records. Measuring \code{t} first, then flipping \code{t} under \code{v}'s control,
+gives an unsafe drop on both records. Both drop \code{t} and return \code{v}, giving the same unread standard-basis measurement with weight
 $1/2$ for each record at every input.
 
 \section{Blocks and loans}\label{sec:loans}
@@ -291,7 +291,7 @@ safety of drops without loans is coNP-complete, even without measurement and wit
 
 Our OpenQASM~3 compiler runs this check, computes numerical return gates, and reuses blocks safe on every record.
 Only basis allocations compile, program (c)'s $V$ is unsupported, and no loan may be dropped after a
-\code{\kw{lift}} or an \code{\kw{if}}. For the general loan returns it supports, the compiler checks $\textcolor{returnink}{R}\textcolor{certink}{B}=\textcolor{stateink}{J}$ entrywise within $10^{-9}$.
+\code{\kw{lift}} or an \code{\kw{if}}. For the general loan returns it supports, the compiler checks $\textcolor{returnink}{R}\textcolor{certink}{B}=\textcolor{stateink}{J}$ numerically, with entrywise tolerance $10^{-9}$.
 Measuring and resetting a qubit to $|0\rangle$ also permits reuse~\cite{DeCross2023QubitReuse,Hua2023CaQR}, but destroys an unknown loan state.
 
 Where Qurts and Reqomp reclaim by uncomputing~\cite{Hirata2025Qurts,Paradis2024Reqomp}, our test constructs
@@ -302,7 +302,7 @@ the restoration that ReQWIRE
 verifies~\cite[\S4]{Rand2019ReQWIRE} and that Q\# and fractional types
 require~\cite{MicrosoftQsharpMemory,Chen2020Fractional}.
 
-For loans, local rotations repair separable errors on a dirty ancilla~\cite[\S5.2, Alg.~2]{Li2026AncillaSafety},
+For loans, prior work repairs separable errors on a dirty ancilla by local rotations~\cite[\S5.2, Alg.~2]{Li2026AncillaSafety},
 while our gate undoes the block's isometry $\textcolor{certink}{B}$ at the drop. QBorrow also requires unchanged loans after each
 denoted operation~\cite[Def.~5.1]{Su2025Borrowing} and Bona after each borrowing body~\cite[Def.~3.2]{Xu2026Bona},
 a handback property that separation logics verify deductively~\cite{Matsushita2026RapunSL,Su2024Heap}.
