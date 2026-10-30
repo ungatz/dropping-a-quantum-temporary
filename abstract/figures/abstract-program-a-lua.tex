@@ -9,19 +9,19 @@
 \begin{document}
 \begin{tikzpicture}[house,line cap=round,
  gate/.style={box,rounded corners=1pt,fill=white,minimum width=.46cm,minimum height=.47cm,inner sep=1pt}]
-  \fill[prefixpaper,rounded corners=2pt] (.95,-.18) rectangle (3.28,1.02);
+  \fill[prefixpaper,rounded corners=2pt] (.80,-0.43) rectangle (3.28,1.02);
   \node[font=\small] at (3.03,1.78) {$K^{(a)}x=|{+}\rangle\otimes x$};
   \node[font=\small,text=certink] at (4.12,1.25) {$g=|{+}\rangle$};
-  \node[font=\small,text=returnink] at (5.71,1.25) {reuse};
-  \node[font=\small] at (1.51,.35) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
-  \node[anchor=east,inner sep=1pt] at (.53,.13) {$\texttt{v}:x$};
+  \node[font=\small,text=stateink] at (5.71,1.25) {$|0\rangle$};
+  \node[font=\small,anchor=east,inner sep=0pt] at (1.78,.43) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
+  \node[anchor=east,inner sep=1pt] at (.53,-0.12) {$\texttt{v}:x$};
   \fill[stateink] (1.08,.61)--(1.08,.85)--(1.30,.73)--cycle;
   \draw[accentplum,circuitwire] (1.30,.73)--(4.25,.73);
   \draw[returnink,circuitwire,->] (4.25,.73)--(6.10,.73);
-  \draw[ink,circuitwire,->] (.60,.13)--(6.10,.13);
+  \draw[ink,circuitwire,->] (.60,-0.12)--(6.10,-0.12);
   \node[gate] at (2.22,.73) {$H$};
-  \draw[muted,densely dashed] (5.25,-.08)--(5.25,1.00);
-  \node[font=\small,text=muted,anchor=north] at (5.25,-.19) {\figurekw{drop}~\texttt{t}};
+  \draw[muted,densely dashed] (5.25,-0.33)--(5.25,1.00);
+  \node[font=\small,text=muted,anchor=north] at (5.25,-0.44) {\figurekw{drop}~\texttt{t}};
   \node[gate,draw=returnink,fill=returnsoft] at (4.25,.73) {$R=H$};
 \end{tikzpicture}
 \end{document}

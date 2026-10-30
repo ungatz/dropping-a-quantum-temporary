@@ -8,20 +8,20 @@
 \begin{document}
 \begin{tikzpicture}[house,line cap=round,
  gate/.style={box,rounded corners=1pt,fill=white,minimum width=.46cm,minimum height=.47cm,inner sep=1pt}]
-  \fill[prefixpaper,rounded corners=2pt] (.95,-.18) rectangle (4.89,1.74);
-  \node[font=\small,text=muted] at (2.04,2.02) {witness on record $1$};
-  \node[font=\small] at (1.51,1.49) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
+  \fill[prefixpaper,rounded corners=2pt] (.95,-0.56) rectangle (4.89,1.94);
+  \node[font=\small,text=muted] at (2.04,2.22) {witness on record $1$};
+  \node[font=\small] at (1.51,1.69) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
   \node[font=\small] at (1.51,.90) {${\color{stateink}\texttt{a}}:{\color{stateink}|0\rangle}$};
-  \node[anchor=east,inner sep=1pt] at (.53,.00) {$\texttt{v}:x$};
-  \fill[stateink] (1.08,1.08)--(1.08,1.32)--(1.30,1.20)--cycle;
+  \node[anchor=east,inner sep=1pt] at (.53,-0.2) {$\texttt{v}:x$};
+  \fill[stateink] (1.08,1.28)--(1.08,1.52)--(1.30,1.4)--cycle;
   \fill[stateink] (1.08,.48)--(1.08,.72)--(1.30,.60)--cycle;
-  \draw[accentplum,circuitwire] (1.30,1.20)--(5.11,1.20);
-  \draw[returnink,circuitwire,->] (5.11,1.20)--(6.20,1.20);
+  \draw[accentplum,circuitwire] (1.30,1.4)--(5.11,1.4);
+  \draw[returnink,circuitwire,->] (5.11,1.4)--(6.20,1.4);
   \draw[stateink,circuitwire] (1.30,.60)--(4.24,.60);
-  \draw[ink,circuitwire,->] (.60,.00)--(6.20,.00);
-  \node[gate] at (1.77,.00) {$H$};
-  \fill[ink] (2.56,.00) circle (2pt);
-  \draw[ink,circuitwire] (2.56,.00)--(2.56,.60);
+  \draw[ink,circuitwire,->] (.60,-0.2)--(6.20,-0.2);
+  \node[gate] at (1.77,-0.2) {$H$};
+  \fill[ink] (2.56,-0.2) circle (2pt);
+  \draw[ink,circuitwire] (2.56,-0.2)--(2.56,.60);
   \draw[ink,fill=white] (2.56,.60) circle (.14);
   \draw[ink] (2.42,.60)--(2.70,.60) (2.56,.46)--(2.56,.74);
   \node[gate] at (3.43,.60) {\figurekw{lift}};
@@ -30,9 +30,9 @@
   \pic at (4.24,.60) {scopeground};
   \node[font=\footnotesize,text=muted] at (4.24,.91) {\figurekw{drop}~\texttt{a}};
   \draw[muted,circuitwire,densely dotted] (4.24,.60)--(5.11,.60);
-  \draw[muted,densely dashed] (5.11,-.08)--(5.11,1.59);
-  \node[font=\small,text=muted,anchor=north] at (5.11,-.18) {\figurekw{drop}~\texttt{t}};
-  \node[font=\small,text=certink] at (5.65,1.53) {$g=|0\rangle$};
-  \node[font=\small,text=returnink] at (5.65,.89) {$R=I$};
+  \draw[muted,densely dashed] (5.11,-0.40)--(5.11,1.79);
+  \node[font=\small,text=muted,anchor=north] at (5.11,-0.50) {\figurekw{drop}~\texttt{t}};
+  \node[font=\small,text=certink] at (5.65,1.73) {$g=|0\rangle$};
+  \node[font=\small,text=returnink] at (5.65,1.04) {$R=I$};
 \end{tikzpicture}
 \end{document}

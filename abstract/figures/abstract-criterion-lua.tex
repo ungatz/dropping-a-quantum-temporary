@@ -6,45 +6,45 @@
 \tikzset{lbldim/.style={font=\small, text=muted, inner sep=2pt}}
 \begin{document}
 \begin{tikzpicture}[house, semithick, font=\normalsize,
-  bx/.style={box, fill=white, minimum width=7.5mm, minimum height=10.5mm},
+  bx/.style={box, fill=white, minimum width=7.5mm, minimum height=12.6mm},
   sm/.style={box, fill=white, minimum width=6.5mm, minimum height=4.6mm}]
 \node[bx] (U) at (0,0) {$M$};
-\coordinate (a1) at ($(U.west)+(-0.62,0.27)$);
-\draw[accentplum,circuitwire] (a1) -- ($(U.west)+(0,0.27)$);
+\coordinate (a1) at ($(U.west)+(-0.62,0.4)$);
+\draw[accentplum,circuitwire] (a1) -- ($(U.west)+(0,0.4)$);
 \fill[ink] (a1) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
 \node[left, font=\small, inner sep=1.5pt, text=stateink] at ($(a1)+(-0.17,0)$) {$\psi$};
-\draw[ink,circuitwire] ($(U.west)+(0,-0.27)$) -- ++(-1.0,0) node[left, font=\small, inner sep=1.5pt] {\texttt{v}};
-\draw[accentplum,circuitwire] ($(U.east)+(0,0.27)$) -- ++(0.40,0) coordinate (g1);
+\draw[ink,circuitwire] ($(U.west)+(0,-0.4)$) -- ++(-1.0,0) node[left, font=\small, inner sep=1.5pt] {\texttt{v}};
+\draw[accentplum,circuitwire] ($(U.east)+(0,0.4)$) -- ++(0.40,0) coordinate (g1);
 \pic at (g1) {scopeground};
-\draw[ink,circuitwire] ($(U.east)+(0,-0.27)$) -- ++(0.85,0);
-\node[lbldim,text=accentplum] at (-0.72,0.46) {\texttt{t}};%
-\node[lbldim] at (0,-0.85) {program $p$};
+\draw[ink,circuitwire] ($(U.east)+(0,-0.4)$) -- ++(0.85,0);
+\node[lbldim,text=accentplum] at (-0.72,0.68) {\texttt{t}};%
+\node[lbldim] at (0,-0.95) {program $p$};
 \node at (1.60,0) {$\equiv$};
-\node[font=\small, text=muted, inner sep=1pt] at (1.55,0.55) {if safe};
+\node[font=\small, text=muted, inner sep=1pt] at (1.55,0.72) {if safe};
 \begin{scope}[xshift=2.45cm]
-  \coordinate (a2) at (0,0.27);
+  \coordinate (a2) at (0,0.4);
   \fill[certink] (a2) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
   \node[left, font=\small, inner sep=1.5pt, text=certink] at ($(a2)+(-0.17,0)$) {$g$};
   \draw[certink,circuitwire] (a2) -- ++(1.10,0) coordinate (g2);
   \pic at (g2) {scopeground};
-  \node[sm] (W) at (0.5,-0.27) {$W$};
+  \node[sm] (W) at (0.5,-0.4) {$W$};
   \draw[ink,circuitwire] (W.west) -- ++(-0.45,0) node[left, font=\small, inner sep=1.5pt] {\texttt{v}};
   \draw[ink,circuitwire] (W.east) -- ++(0.5,0);
-  \node[lbldim] at (0.35,-0.85) {safe};
+  \node[lbldim] at (0.35,-0.95) {$g\otimes W$};
 \end{scope}
 \node at (4.15,0) {$\equiv$};
 \begin{scope}[xshift=5.25cm]
-  \coordinate (a3) at (0,0.27);
+  \coordinate (a3) at (0,0.4);
   \fill[ink] (a3) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
   \node[left, font=\small, inner sep=1.5pt, text=stateink] at ($(a3)+(-0.17,0)$) {$\psi$};
-  \node[sm] (P) at (0.55,0.27) {$P$};
+  \node[sm] (P) at (0.55,0.4) {$P$};
   \draw[accentplum,circuitwire] (a3) -- (P.west);
   \draw[accentplum,circuitwire] (P.east) -- ++(0.40,0) coordinate (g3);
   \pic at (g3) {scopeground};
-  \node[sm] (W3) at (0.55,-0.27) {$U$};
+  \node[sm] (W3) at (0.55,-0.4) {$U$};
   \draw[ink,circuitwire] (W3.west) -- ++(-0.5,0) node[left, font=\small, inner sep=1.5pt] {\texttt{v}};
   \draw[ink,circuitwire] (W3.east) -- ++(0.5,0);
-  \node[lbldim] at (0.45,-0.85) {$\mathcal S(P,U)$};
+  \node[lbldim] at (0.45,-0.95) {$\mathcal S(P,U)$};
 \end{scope}
 \end{tikzpicture}
 \end{document}

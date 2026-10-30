@@ -9,21 +9,22 @@
 \begin{document}
 \begin{tikzpicture}[house,line cap=round,
  gate/.style={box,rounded corners=1pt,fill=white,minimum width=.50cm,minimum height=.49cm,inner sep=1pt}]
-  \fill[prefixpaper,rounded corners=2pt] (.95,-.12) rectangle (3.78,1.32);
+  \fill[prefixpaper,rounded corners=2pt] (.95,-0.45) rectangle (3.78,1.32);
   \node[font=\small] at (1.70,1.55) {$K\ell=X\ell\otimes|{+}\rangle$};
   \node[font=\small,text=returnink] at (4.55,1.55) {$R=X\otimes H$ at drop};
   \node[anchor=east,inner sep=1pt,text=loanink] at (.53,.78) {$\texttt{l}:\ell$};
-  \node[font=\small] at (1.44,.53) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
-  \fill[stateink] (1.12,.07)--(1.12,.31)--(1.34,.19)--cycle;
+  \node[font=\small] at (1.44,0.17) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
+  \fill[stateink] (1.12,-0.19)--(1.12,0.05)--(1.34,-0.07)--cycle;
   \draw[loanink,circuitwire,->] (.60,.78)--(6.07,.78);
-  \draw[accentplum,circuitwire] (1.34,.19)--(4.30,.19);
-  \draw[returnink,circuitwire,->] (4.30,.19)--(6.07,.19);
-  \node[gate] at (2.30,.19) {$H$};
+  \draw[accentplum,circuitwire] (1.34,-0.07)--(4.30,-0.07);
+  \draw[returnink,circuitwire,->] (4.30,-0.07)--(6.07,-0.07);
+  \node[gate] at (2.30,-0.07) {$H$};
   \node[gate] at (3.00,.78) {$X$};
-  \node[font=\footnotesize,text=muted,anchor=north] at (4.95,-.09) {\figurekw{drop}~\texttt{(l,t)}};
+  \draw[muted,densely dashed] (4.95,-0.28)--(4.95,1.10);
+  \node[font=\footnotesize,text=muted,anchor=north] at (4.95,-0.35) {\figurekw{drop}~\texttt{(l,t)}};
   \node[gate,draw=returnink,fill=returnsoft] at (4.30,.78) {$X$};
-  \node[gate,draw=returnink,fill=returnsoft] at (4.30,.19) {$H$};
+  \node[gate,draw=returnink,fill=returnsoft] at (4.30,-0.07) {$H$};
   \node[anchor=west,inner sep=2pt,text=loanink] at (6.17,.78) {$\ell$};
-  \node[anchor=west,inner sep=2pt,text=returnink] at (6.17,.19) {$|0\rangle$};
+  \node[anchor=west,inner sep=2pt,text=returnink] at (6.17,-0.07) {$|0\rangle$};
 \end{tikzpicture}
 \end{document}

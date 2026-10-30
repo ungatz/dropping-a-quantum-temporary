@@ -9,29 +9,29 @@
 \begin{document}
 \begin{tikzpicture}[house,line cap=round,
  gate/.style={box,rounded corners=1pt,fill=white,minimum width=.52cm,minimum height=.50cm,inner sep=1pt}]
-  \fill[prefixpaper,rounded corners=2pt] (.95,-.18) rectangle (6.12,1.35);
+  \fill[prefixpaper,rounded corners=2pt] (.80,-0.34) rectangle (6.12,1.35);
   \node[font=\small,text=returnink] at (7.35,1.58) {one reflection};
-  \node[font=\small] at (1.48,.52) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
-  \node[anchor=east,inner sep=1pt] at (.53,.16) {$\texttt{v}:x$};
+  \node[font=\small,anchor=east,inner sep=0pt] at (1.78,.54) {${\color{accentplum}\texttt{t}}:{\color{stateink}|0\rangle}$};
+  \node[anchor=east,inner sep=1pt] at (.53,0) {$\texttt{v}:x$};
   \fill[stateink] (1.12,.73)--(1.12,.97)--(1.34,.85)--cycle;
   \draw[accentplum,circuitwire] (1.34,.85)--(7.30,.85);
   \draw[returnink,circuitwire,->] (7.30,.85)--(8.85,.85);
-  \draw[ink,circuitwire,->] (.60,.16)--(8.85,.16);
+  \draw[ink,circuitwire,->] (.60,0)--(8.85,0);
   \node[gate] at (2.20,.85) {$X$};
   \node[gate] at (3.05,.85) {$H$};
-  \node[gate] at (3.05,.16) {$H$};
-  \fill[ink] (4.20,.16) circle (2pt);
-  \draw[ink,circuitwire] (4.20,.16)--(4.20,.85);
+  \node[gate] at (3.05,0) {$H$};
+  \fill[ink] (4.20,0) circle (2pt);
+  \draw[ink,circuitwire] (4.20,0)--(4.20,.85);
   \draw[ink,fill=white] (4.20,.85) circle (.14);
   \draw[ink] (4.06,.85)--(4.34,.85) (4.20,.71)--(4.20,.99);
-  \node[font=\footnotesize,text=muted] at (4.20,-.31) {$O_f$};
-  \node[gate] at (5.45,.16) {$H$};
-  \draw[muted,densely dashed] (8.30,-.07)--(8.30,1.07);
-  \node[font=\footnotesize,text=muted,anchor=north] at (8.30,-.15) {\figurekw{drop}~\texttt{t}};
+  \node[font=\footnotesize,text=muted] at (4.20,-0.47) {$O_f$};
+  \node[gate] at (5.45,0) {$H$};
+  \draw[muted,densely dashed] (8.30,-0.23)--(8.30,1.07);
+  \node[font=\footnotesize,text=muted,anchor=north] at (8.30,-0.31) {\figurekw{drop}~\texttt{t}};
   \node[font=\small,text=certink] at (5.55,1.58) {$g=|{-}\rangle$};
   \node[gate,draw=returnink,fill=returnsoft,minimum width=1.13cm] at (7.30,.85) {$R=ZHZ$};
   \node[font=\small,text=stateink] at (8.58,1.17) {$|0\rangle$};
-  \node[font=\small,text=muted] at (10.75,1.58) {$f(j)=j$};
+  \node[font=\small,text=muted] at (10.75,1.58) {$f(z)=z$};
   \node[font=\normalsize] at (10.75,.48) {$K=\dfrac1{\sqrt2}
    \left[\begin{matrix}
    {\color{accent}0}&{\color{accent}1}\\

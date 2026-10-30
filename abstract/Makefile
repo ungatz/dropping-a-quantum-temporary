@@ -1,5 +1,5 @@
 LATEXMK ?= latexmk
-LUAFIGURES := abstract-criterion-lua abstract-dj-lua abstract-loan-lua abstract-matrices-lua abstract-program-a-lua abstract-program-b-lua abstract-program-c-lua abstract-records-lua abstract-reflection-lua abstract-witness-c-lua
+LUAFIGURES := abstract-criterion-lua abstract-dj-lua abstract-loan-lua abstract-matrices-lua abstract-program-a-lua abstract-program-b-lua abstract-program-c-lua abstract-reflection-lua abstract-witness-c-lua
 FIGURE_PDFS := $(addprefix figures/,$(addsuffix .pdf,$(LUAFIGURES)))
 
 .NOTPARALLEL:

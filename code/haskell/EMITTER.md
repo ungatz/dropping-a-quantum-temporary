@@ -31,8 +31,8 @@ to H on that wire. The independent data computation is left alone.
 For a larger block, `emitReclaim` selects an identity, a basis permutation,
 a two-support reflection or the general reflection. The general construction
 runs the inverse axis preparation, flips the sign of `|0...0>`, then runs
-the axis preparation. A block that holds loans gets the return gate T with
-T B = J from `emitLoanReturn`, which builds the general case with `emitFrameReturnOps`: one reflection per column of the block
+the axis preparation. A block that holds loans gets the return gate R with
+R B = J from `emitLoanReturn`, which builds the general case with `emitFrameReturnOps`: one reflection per column of the block
 factor B, each carrying that column onto the loan's basis state beside the
 temporaries' allocation state and fixing the columns already placed, then one
 diagonal that removes the unit scalars. `frameReturnMatrix` is the same gate
