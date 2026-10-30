@@ -11,7 +11,7 @@
 \node[bx] (U) at (0,0) {$M$};
 \coordinate (a1) at ($(U.west)+(-0.62,0.4)$);
 \draw[accentplum,circuitwire] (a1) -- ($(U.west)+(0,0.4)$);
-\fill[ink] (a1) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
+\fill[stateink] (a1) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
 \node[left, font=\small, inner sep=1.5pt, text=stateink] at ($(a1)+(-0.17,0)$) {$\psi$};
 \draw[ink,circuitwire] ($(U.west)+(0,-0.4)$) -- ++(-1.0,0) node[left, font=\small, inner sep=1.5pt] {\texttt{v}};
 \draw[accentplum,circuitwire] ($(U.east)+(0,0.4)$) -- ++(0.40,0) coordinate (g1);
@@ -30,21 +30,21 @@
   \node[sm] (W) at (0.5,-0.4) {$W$};
   \draw[ink,circuitwire] (W.west) -- ++(-0.45,0) node[left, font=\small, inner sep=1.5pt] {\texttt{v}};
   \draw[ink,circuitwire] (W.east) -- ++(0.5,0);
-  \node[lbldim] at (0.35,-0.95) {$g\otimes W$};
+  \node[lbldim] at (0.35,-0.95) {$\textcolor{certink}{g}\otimes W$};
 \end{scope}
 \node at (4.15,0) {$\equiv$};
 \begin{scope}[xshift=5.25cm]
   \coordinate (a3) at (0,0.4);
-  \fill[ink] (a3) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
+  \fill[stateink] (a3) ++(-0.17,-0.10) -- ++(0,0.20) -- ++(0.17,-0.10) -- cycle;
   \node[left, font=\small, inner sep=1.5pt, text=stateink] at ($(a3)+(-0.17,0)$) {$\psi$};
-  \node[sm] (P) at (0.55,0.4) {$P$};
+  \node[sm] (P) at (0.55,0.4) {$\textcolor{certink}{P}$};
   \draw[accentplum,circuitwire] (a3) -- (P.west);
   \draw[accentplum,circuitwire] (P.east) -- ++(0.40,0) coordinate (g3);
   \pic at (g3) {scopeground};
   \node[sm] (W3) at (0.55,-0.4) {$U$};
   \draw[ink,circuitwire] (W3.west) -- ++(-0.5,0) node[left, font=\small, inner sep=1.5pt] {\texttt{v}};
   \draw[ink,circuitwire] (W3.east) -- ++(0.5,0);
-  \node[lbldim] at (0.45,-0.95) {$\mathcal S(P,U)$};
+  \node[lbldim] at (0.45,-0.95) {$\mathcal S(\textcolor{certink}{P},U)$};
 \end{scope}
 \end{tikzpicture}
 \end{document}

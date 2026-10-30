@@ -19,10 +19,10 @@
     node[midway,above=4pt] {${\color{certink}P}\otimes W$};
   \draw[returnink,circuitwire,->] (b.east)--(out.west)
     node[midway,above=4pt,draw=returnink,fill=returnsoft,rounded corners=1pt,inner sep=2pt]
-      {$R\otimes I$};
+      {$\textcolor{returnink}{R}\otimes I$};
   \node[font=\footnotesize] at (1.65,-.37)
     {${\color{stateink}J}{\color{loanink}\ell}={\color{loanink}\ell}\otimes{\color{stateink}\psi}$};
-  \node[font=\footnotesize,text=certink] at (5.45,-.37) {$PJ=B$};
-  \node[font=\footnotesize,text=returnink] at (9.90,-.37) {$R=P^\dagger,\quad RB=J$};
+  \node[font=\footnotesize] at (5.45,-.37) {$\textcolor{certink}{P}\textcolor{stateink}{J}=\textcolor{certink}{B}$};
+  \node[font=\footnotesize] at (9.90,-.37) {$\textcolor{returnink}{R}=\textcolor{certink}{P}^\dagger,\quad \textcolor{returnink}{R}\textcolor{certink}{B}=\textcolor{stateink}{J}$};
 \end{tikzpicture}
 \end{document}

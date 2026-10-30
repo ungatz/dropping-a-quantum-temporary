@@ -2,6 +2,7 @@
 \input{house-lua}
 \definecolor{stateink}{HTML}{006A7B}
 \definecolor{certink}{HTML}{6D3D85}
+\definecolor{returnink}{HTML}{007A59}
 \DeclareMathSizes{9}{9}{8.5}{6.5}
 \newcommand{\ket}[1]{\lvert #1\rangle}
 \newcommand{\bra}[1]{\langle #1\rvert}
@@ -20,7 +21,7 @@
     \node[anchor=west, inner sep=2pt] at (1.12*\rr,0.45*\rr) {$\Delta$};
     \node[font=\small, text=muted, anchor=east, inner sep=2pt] at (210:1.25*\rr) {mirror};
   \end{scope}
-  \node at (4.05,3.3) {$R=I-2\dfrac{\Delta\Delta^\dagger}{\|\Delta\|^2}$};
-  \node[font=\small, text=muted] at (4.05,2.62) {$R=I$ if $\Delta=0$.};
+  \node at (4.05,3.3) {$\textcolor{returnink}{R}=I-2\dfrac{\Delta\Delta^\dagger}{\|\Delta\|^2}$};
+  \node[font=\small, text=muted] at (4.05,2.62) {$\textcolor{returnink}{R}=I$ if $\Delta=0$.};
 \end{tikzpicture}
 \end{document}

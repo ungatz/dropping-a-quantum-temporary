@@ -3,6 +3,7 @@
 \definecolor{prefixpaper}{HTML}{DDECEE}
 \definecolor{prefixline}{HTML}{BDD5DA}
 \definecolor{stateink}{HTML}{006A7B}
+\definecolor{certink}{HTML}{6D3D85}
 \begin{document}
 \begin{tikzpicture}[house,line cap=round,
  gate/.style={box,rounded corners=1pt,fill=white,minimum width=.46cm,minimum height=.47cm,inner sep=1pt}]
@@ -22,7 +23,7 @@
   \draw[ink] (3.11,-0.12)--(3.39,-0.12) (3.25,-0.26)--(3.25,0.02);
   \draw[muted,densely dashed] (4.14,-0.33)--(4.14,1.29);
   \node[font=\small,text=muted,anchor=north] at (4.14,-0.44) {\figurekw{drop}~\texttt{t}};
-  \node[font=\small,text=accentwarm,anchor=west] at (4.65,.86) {no fixed $g$};
+  \node[font=\small,text=accentwarm,anchor=west] at (4.65,.86) {no fixed $\textcolor{certink}{g}$};
   \pic at (4.58,.73) {scopeground};
 \end{tikzpicture}
 \end{document}
