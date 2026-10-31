@@ -106,9 +106,9 @@ and its input state. Triangles (\allocmark) mark allocation and ground symbols (
 \includegraphics[width=\linewidth]{figures/abstract-program-b\luafig}
 \end{minipage}\par\medskip\noindent
 In our language, \code{\kw{drop}} ends \code{t}'s scope without changing the joint state. Program (a)
-leaves \code{t} in $|{+}\rangle$ at every input, so $H$ alone restores \code{t} to $|0\rangle$. In program (b), \code{CX
+leaves \code{t} in $|{+}\rangle=(|0\rangle+|1\rangle)/\sqrt2$ at every input, so $H$ alone restores \code{t} to $|0\rangle$. In program (b), \code{CX
   t v} flips \code{v} when \code{t} is $|1\rangle$, giving the Bell state $(|00\rangle+|11\rangle)/\sqrt2$ when \code{v}
-starts in $|0\rangle$. Both temporaries have the same lexical scope, so checking scopes would accept both drops. Silq and Unqomp's \code{qfree} rules exclude $H$ because it takes basis states to superpositions, and
+starts in $|0\rangle$. The temporaries have the same scope, so scope checks accept both drops. Silq and Unqomp's \code{qfree} rules exclude $H$ because it takes basis states to superpositions, and
 reject both drops. Unqomp also rejects \code{H t; H t}, where \code{t} ends in
 $|0\rangle$~\cite[\S6.2]{Paradis2021Unqomp}.
 
@@ -299,7 +299,7 @@ Where Qurts and Reqomp reclaim by uncomputing~\cite{Hirata2025Qurts,Paradis2024R
 reclaim~\cite[Defs.~2--6]{Faro2026Qutes}. Twist verifies annotated purity through static analysis and runtime
 separability tests~\cite[\S1.3]{Yuan2022Twist}, but one return gate needs a pure state common to all inputs. The gate built from that state provides
 the restoration that ReQWIRE
-verifies~\cite[\S4]{Rand2019ReQWIRE} and that Q\# and fractional types
+specifies~\cite[\S3]{Rand2019ReQWIRE} and that Q\# and fractional types
 require~\cite{MicrosoftQsharpMemory,Chen2020Fractional}.
 
 For loans, prior work repairs separable errors on a dirty ancilla by local rotations~\cite[\S5.2, Alg.~2]{Li2026AncillaSafety},
