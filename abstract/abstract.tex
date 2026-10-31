@@ -133,8 +133,8 @@ This context undoes program (b)'s gates and reads $00$ with weight $1$. An indep
 The witness prepares \code{t} in a fixed pure state $\textcolor{certink}{g}$ without using the input, while
 $U$ computes a map $W$ on the rest, sending input $x$ to their joint state $Wx$. The witness therefore has
 slice $\textcolor{certink}{g_i}W$ at basis value $i$, where $\textcolor{certink}{g_i}$ is the coefficient of $|i\rangle$ in $\textcolor{certink}{g}$. For $p$ to be equivalent to the witness, no context
-can distinguish their joint states before the drop, on any input. This requires the same slice form
-$K_i=\textcolor{certink}{g_i}W$ for $p$, giving $Kx=\textcolor{certink}{g}\otimes Wx$. In program (a), equal slices give
+can distinguish their joint states before the drop, on any input. Absorbing a global phase into $W$ gives
+$K_i=\textcolor{certink}{g_i}W$ and $Kx=\textcolor{certink}{g}\otimes Wx$ for $p$. In program (a), equal slices give
 $\textcolor{certink}{g}=|{+}\rangle$ and $W=I$, while in program (b) no scalar turns $I$ into $X$.
 
 The witness prepares the dropped registers together as one \emph{block}, without the input, and allocates
@@ -283,7 +283,7 @@ The diagram below gives $K$ and $\textcolor{returnink}{R}$ for \code{lend}, whos
 We prove progress and preservation for a linear, first-order abstract machine with lifting and classical
 guards. For reuse, it restores safe blocks and pools temporaries for \code{\kw{new}} of matching dimension and
 state, preserving records, weights and the reduced state of returned registers on each record.
-To decide safety, our exact Haskell checker tests each record's basis inputs for a common temporary state
+For each record, our exact Haskell checker tests basis inputs for a common temporary state
 or loan isometry $\textcolor{certink}{B}$, taking time exponential in the number of qubits. With only basis allocations and
 $X$, \code{CX} and Toffoli,
 safety of drops without loans is coNP-complete, even without measurement and with one drop
